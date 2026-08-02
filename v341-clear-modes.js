@@ -99,6 +99,7 @@
     loadRuntime('v341-returns-parser.js', 'v341-returns-parser');
     loadRuntime('v341-payments-parser.js', 'v341-payments-parser');
     loadRuntime('v341-settlements-parser.js', 'v341-settlements-parser');
+    loadRuntime('v341-xlsx-importer.js', 'v341-xlsx-importer');
   }
 
   if (document.readyState === 'loading') {

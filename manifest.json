@@ -1,8 +1,8 @@
 {
   "manifest_version": 3,
-  "name": "Flipkart Analytics & Tools v3.3",
-  "version": "3.3",
-  "description": "Flipkart analytics with exact Flipkart label crop ratios from the supplied cropper rules.",
+  "name": "Flipkart Analytics & Tools v3.4",
+  "version": "3.4",
+  "description": "Flipkart analytics with local PDF crop engine, stable reconciliation, seller isolation and safer current-page sync.",
   "permissions": [
     "storage",
     "downloads",
@@ -64,7 +64,9 @@
         "styles.css",
         "app.js",
         "icons/*",
-        "page-bridge.js"
+        "page-bridge.js",
+        "pdf-lib.min.js",
+        "v34-core.js"
       ],
       "matches": [
         "https://seller.flipkart.com/*",

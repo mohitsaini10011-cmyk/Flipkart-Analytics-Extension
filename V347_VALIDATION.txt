@@ -1,0 +1,21 @@
+Ecom Insight v3.4.7 Validation Report
+
+PASS manifest version: 3.4.7
+PASS context guard loads before content.js
+PASS openDashboard direct extension-context guard
+PASS chrome.runtime.onMessage registration guard
+PASS SYNC_PROGRESS done/error/cancelled lifecycle bridged through dc-fk-sync-lifecycle
+PASS single original-page restore owner: v343-sync-controller.js
+PASS sync heartbeat stops on invalid extension context
+PASS content live timer and mutation observer stop on invalid context
+PASS dock branding: Ecom Insight / Marketplace Intelligence
+PASS launcher title: Ecom Insight
+PASS icon16.png: 16x16
+PASS icon32.png: 32x32
+PASS icon48.png: 48x48
+PASS icon128.png: 128x128
+PASS cropper/PDF source remains removed
+
+Static validation scope:
+- Source-level guards and lifecycle wiring verified.
+- Real Seller Hub navigation, stale-tab refresh behavior, and full-account sync still require browser runtime testing.

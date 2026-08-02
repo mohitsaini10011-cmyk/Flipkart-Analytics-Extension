@@ -8,7 +8,10 @@
   function persistStaleEvidence(reason) {
     try {
       const previous = JSON.parse(sessionStorage.getItem(STALE_KEY) || '[]');
-      previous.push({ type: 'stale-context-detected', reason, at: Date.now(), url: location.href });
+      const now = Date.now();
+      const last = previous[previous.length - 1];
+      if (last && last.reason === reason && now - Number(last.at || 0) < 1500) return;
+      previous.push({ type: 'stale-context-detected', reason, at: now, url: location.href });
       sessionStorage.setItem(STALE_KEY, JSON.stringify(previous.slice(-20)));
     } catch {}
   }
@@ -43,7 +46,6 @@
     if (!trigger || extensionContextAvailable()) return;
     event.preventDefault();
     event.stopImmediatePropagation();
-    persistStaleEvidence('guarded-click');
     showReloadNotice({ detail: { reason: 'guarded-click' } });
   }
   window.addEventListener('click', guardClick, true);
@@ -52,14 +54,12 @@
     const message = String(event?.error?.message || event?.message || '');
     if (!/extension context invalidated|cannot access a chrome extension|chrome\.runtime/i.test(message)) return;
     event.preventDefault();
-    persistStaleEvidence(message);
     showReloadNotice({ detail: { reason: message } });
   }, true);
   window.addEventListener('unhandledrejection', event => {
     const message = String(event?.reason?.message || event?.reason || '');
     if (!/extension context invalidated|cannot access a chrome extension|chrome\.runtime/i.test(message)) return;
     event.preventDefault();
-    persistStaleEvidence(message);
     showReloadNotice({ detail: { reason: message } });
   });
 })();

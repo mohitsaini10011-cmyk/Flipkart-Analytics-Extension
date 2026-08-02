@@ -1,10 +1,10 @@
 'use strict';
 (() => {
-  const KEY = 'dc_fk_runtime_diagnostics_v349';
+  const KEY = 'dc_fk_runtime_diagnostics_v350';
   const STALE_KEY = 'dc_fk_stale_context_evidence_v349';
   const OVERLAY_ID = 'dc-flipkart-analytics-overlay';
   const MAX_EVENTS = 300;
-  const EXTENSION_FILES = /(?:content|background|page-bridge|v34|v341|v343|v345|v346|v348|v349|dashboard|app)\.js/i;
+  const UNIQUE_EXTENSION_FILES = /(?:content|background|page-bridge|v34-core|v341-[\w-]+|v343-sync-controller|v345-runtime|v346-context-guard|v348-runtime-diagnostics)\.js/i;
   const sessionId = crypto.randomUUID();
   let writeQueue = Promise.resolve();
   let overlayOpen = Boolean(document.getElementById(OVERLAY_ID));
@@ -13,16 +13,59 @@
     try { return Boolean(globalThis.chrome?.runtime?.id && chrome.storage?.local); }
     catch { return false; }
   }
+  function blankState() {
+    return { sessionId, events: [], errors: [], counters: {}, syncSummaries: {} };
+  }
   async function readState() {
-    if (!contextAvailable()) return { sessionId, events: [], errors: [], counters: {} };
-    try { return (await chrome.storage.local.get(KEY))[KEY] || { sessionId, events: [], errors: [], counters: {} }; }
-    catch { return { sessionId, events: [], errors: [], counters: {} }; }
+    if (!contextAvailable()) return blankState();
+    try {
+      const state = (await chrome.storage.local.get(KEY))[KEY] || blankState();
+      state.syncSummaries = state.syncSummaries || {};
+      return state;
+    } catch { return blankState(); }
   }
   function classifyError(message, filename, stack) {
     const hay = `${filename || ''}\n${stack || ''}\n${message || ''}`;
-    if (/chrome-extension:\/\//i.test(hay) || EXTENSION_FILES.test(hay) || /Ecom Insight|dc-fk-|dc_fk_/i.test(hay)) return 'extension';
+    let extensionBase = '';
+    try { extensionBase = chrome.runtime.getURL(''); } catch {}
+    if (extensionBase && hay.includes(extensionBase)) return 'extension';
+    if (UNIQUE_EXTENSION_FILES.test(hay) || /Ecom Insight|dc-fk-|dc_fk_/i.test(hay)) return 'extension';
     if (/seller\.flipkart\.com|flipkart/i.test(hay)) return 'seller-page';
     return 'unknown';
+  }
+  function updateSyncSummary(state, type, detail) {
+    const syncId = detail.syncId;
+    if (!syncId) return;
+    const row = state.syncSummaries[syncId] ||= {
+      syncId,
+      started: false,
+      finished: false,
+      requiresRestore: false,
+      restoreCount: 0,
+      navigationCount: 0,
+      stallCount: 0
+    };
+    row.updatedAt = Date.now();
+    if (type === 'sync-started') {
+      row.started = true;
+      row.startedAt = detail.at || Date.now();
+      row.originalUrl = detail.originalUrl || row.originalUrl;
+    } else if (type === 'sync-finished') {
+      row.finished = true;
+      row.finishedAt = detail.at || Date.now();
+      row.result = detail.result;
+      row.requiresRestore = Boolean(detail.requiresRestore);
+      row.finalUrl = detail.finalUrl || row.finalUrl;
+      row.restoreIssuedAt = detail.restoreIssuedAt || row.restoreIssuedAt || null;
+    } else if (type === 'restore-issued') {
+      row.restoreCount = Number(row.restoreCount || 0) + 1;
+      row.restoreIssuedAt = detail.restoreIssuedAt || detail.at || Date.now();
+      row.restoreTarget = detail.originalUrl || row.restoreTarget;
+    } else if (type === 'sync-navigation') {
+      row.navigationCount = Math.max(Number(row.navigationCount || 0), Number(detail.navigationCount || 0));
+    } else if (type === 'sync-stall') {
+      row.stallCount = Math.max(Number(row.stallCount || 0), Number(detail.stallCount || 0));
+    }
   }
   function record(type, detail = {}, isError = false) {
     writeQueue = writeQueue.then(async () => {
@@ -33,10 +76,12 @@
       state.events = Array.isArray(state.events) ? state.events : [];
       state.errors = Array.isArray(state.errors) ? state.errors : [];
       state.counters = state.counters || {};
+      state.syncSummaries = state.syncSummaries || {};
       const entry = { type, at: Date.now(), url: location.href, ...detail };
       state.events.push(entry);
       state.events = state.events.slice(-MAX_EVENTS);
       state.counters[type] = Number(state.counters[type] || 0) + 1;
+      updateSyncSummary(state, type, entry);
       if (isError) {
         state.errors.push(entry);
         state.errors = state.errors.slice(-100);
@@ -118,38 +163,26 @@
   window.addEventListener('dc-fk-runtime-report-request', async () => {
     await writeQueue;
     const state = await readState();
-    const events = state.events || [];
-    const starts = events.filter(item => item.type === 'sync-started' && item.syncId);
-    const finishes = events.filter(item => item.type === 'sync-finished' && item.syncId);
-    const restores = events.filter(item => item.type === 'restore-issued' && item.syncId);
-    const perSync = {};
-    for (const event of starts) perSync[event.syncId] = { syncId: event.syncId, started: true, finished: false, requiresRestore: false, restoreCount: 0 };
-    for (const event of finishes) {
-      const row = perSync[event.syncId] ||= { syncId: event.syncId, started: false, finished: false, requiresRestore: false, restoreCount: 0 };
-      row.finished = true;
-      row.result = event.result;
-      row.requiresRestore = Boolean(event.requiresRestore);
-    }
-    for (const event of restores) {
-      const row = perSync[event.syncId] ||= { syncId: event.syncId, started: false, finished: false, requiresRestore: true, restoreCount: 0 };
-      row.restoreCount++;
-    }
-    const syncRows = Object.values(perSync);
-    const noDuplicateRestores = syncRows.every(row => row.restoreCount <= 1);
-    const requiredRestoresComplete = syncRows.filter(row => row.finished && row.requiresRestore).every(row => row.restoreCount === 1);
-    const unnecessaryRestoresAbsent = syncRows.filter(row => row.finished && !row.requiresRestore).every(row => row.restoreCount === 0);
+    const syncRows = Object.values(state.syncSummaries || {});
+    const startedRows = syncRows.filter(row => row.started);
+    const finishedRows = syncRows.filter(row => row.finished);
+    const allStartedSyncsFinished = startedRows.every(row => row.finished);
+    const noDuplicateRestores = syncRows.every(row => Number(row.restoreCount || 0) <= 1);
+    const requiredRestoresComplete = finishedRows.filter(row => row.requiresRestore).every(row => Number(row.restoreCount || 0) === 1);
+    const unnecessaryRestoresAbsent = finishedRows.filter(row => !row.requiresRestore).every(row => Number(row.restoreCount || 0) === 0);
     const extensionErrors = (state.errors || []).filter(error => error.origin === 'extension');
     const report = {
       sessionId,
       generatedAt: Date.now(),
       dashboardOpenCount: Number(state.counters?.['dashboard-opened'] || 0),
-      syncStarted: starts.length,
-      syncFinished: finishes.length,
+      syncStarted: startedRows.length,
+      syncFinished: finishedRows.length,
       perSync: syncRows,
+      allStartedSyncsFinished,
       noDuplicateRestores,
       requiredRestoresComplete,
       unnecessaryRestoresAbsent,
-      exactlyOneRestorePerRequiredSync: noDuplicateRestores && requiredRestoresComplete && unnecessaryRestoresAbsent,
+      exactlyOneRestorePerRequiredSync: allStartedSyncsFinished && noDuplicateRestores && requiredRestoresComplete && unnecessaryRestoresAbsent,
       totalConsoleErrorCount: (state.errors || []).length,
       extensionErrorCount: extensionErrors.length,
       errorsByOrigin: {
@@ -158,15 +191,13 @@
         unknown: (state.errors || []).filter(error => error.origin === 'unknown').length
       },
       errors: state.errors || [],
-      events
+      events: state.events || []
     };
     window.dispatchEvent(new CustomEvent('dc-fk-runtime-report', { detail: report }));
   });
 
-  window.addEventListener('dc-extension-context-invalid', () => {
-    confirmClosed('context-invalid');
-  });
+  window.addEventListener('dc-extension-context-invalid', () => confirmClosed('context-invalid'));
 
   migrateStaleEvidence();
-  record('diagnostics-loaded', { version: '3.4.9' });
+  record('diagnostics-loaded', { version: '3.5.0' });
 })();

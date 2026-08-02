@@ -101,6 +101,7 @@
     loadRuntime('v341-settlements-parser.js', 'v341-settlements-parser');
     loadRuntime('v341-xlsx-importer.js', 'v341-xlsx-importer');
     loadRuntime('v343-production-hardening.js', 'v343-production-hardening');
+    loadRuntime('v343-logo.js', 'v343-logo');
   }
 
   if (document.readyState === 'loading') {

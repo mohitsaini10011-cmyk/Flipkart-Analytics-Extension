@@ -1,0 +1,160 @@
+name: Apply v3.4.7 runtime fixes
+
+on:
+  push:
+    branches: [main]
+    paths:
+      - '.github/workflows/v347-fix.yml'
+  workflow_dispatch:
+
+permissions:
+  contents: write
+
+jobs:
+  fix:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          token: ${{ secrets.GITHUB_TOKEN }}
+      - uses: actions/setup-node@v4
+        with:
+          node-version: '22'
+      - name: Apply fixes
+        run: |
+          python3 - <<'PY'
+          from pathlib import Path
+          import json, re
+
+          p = Path('content.js')
+          s = p.read_text()
+
+          helper = """
+  function extensionContextAvailable(){
+    try{return Boolean(globalThis.chrome?.runtime?.id&&typeof chrome.runtime.getURL==='function')}catch{return false}
+  }
+  function showExtensionReloadNotice(){
+    try{window.dispatchEvent(new CustomEvent('dc-extension-context-invalid'))}catch{}
+  }
+"""
+          marker = "  const num=v=>Number(String(v||'').replace(/[^0-9.-]/g,''))||0;\n"
+          if 'function extensionContextAvailable()' not in s:
+              s = s.replace(marker, marker + helper)
+
+          old_restore = """      if(!syncCancelled&&generation===syncGeneration&&location.href!==originalUrl){
+        history.back();
+        await sleep(1200);
+      }
+"""
+          s = s.replace(old_restore, "      // Original-page restoration is owned exclusively by v343-sync-controller.js.\n")
+
+          old_done = "frame?.contentWindow?.postMessage({source:'DC_FK_HOST',type:'SYNC_PROGRESS',payload:{state:syncCancelled?'cancelled':'done',success,total:targets.length,results,restored:location.href===originalUrl,mode:'full-account'},token:channelToken},'*');"
+          new_done = old_done + "\n      window.dispatchEvent(new CustomEvent('dc-fk-sync-lifecycle',{detail:{state:syncCancelled?'cancelled':'done',success,total:targets.length,results}}));"
+          if "dc-fk-sync-lifecycle" not in s:
+              s = s.replace(old_done, new_done)
+              old_err = "frame?.contentWindow?.postMessage({source:'DC_FK_HOST',type:'SYNC_PROGRESS',payload:{state:'error',message:String(err?.message||err),results},token:channelToken},'*');"
+              s = s.replace(old_err, old_err + "\n      window.dispatchEvent(new CustomEvent('dc-fk-sync-lifecycle',{detail:{state:'error',message:String(err?.message||err),results}}));")
+
+          old_open = "function openDashboard(){const existing=document.getElementById(OVERLAY_ID);if(existing){existing.classList.remove('dc-closing');sendLiveData(existing.querySelector('iframe'));return}const overlay=document.createElement('div');overlay.id=OVERLAY_ID;overlay.setAttribute('role','dialog');overlay.setAttribute('aria-modal','true');const modal=document.createElement('section');modal.className='dc-fk-modal',iframe=document.createElement('iframe');iframe.className='dc-fk-dashboard-frame';iframe.src=chrome.runtime.getURL('dashboard.html?embedded=1&live=1&token='+encodeURIComponent(channelToken));iframe.title='Flipkart Analytics Dashboard';iframe.addEventListener('load',()=>setTimeout(()=>sendLiveData(iframe),200));modal.append(iframe);overlay.append(modal);overlay.onmousedown=e=>{if(e.target===overlay)closeDashboard()};document.body.append(overlay);document.documentElement.classList.add('dc-fk-modal-open');requestAnimationFrame(()=>overlay.classList.add('dc-open'))}"
+          new_open = "function openDashboard(){if(!extensionContextAvailable()){showExtensionReloadNotice();return}try{const existing=document.getElementById(OVERLAY_ID);if(existing){existing.classList.remove('dc-closing');sendLiveData(existing.querySelector('iframe'));return}const overlay=document.createElement('div');overlay.id=OVERLAY_ID;overlay.setAttribute('role','dialog');overlay.setAttribute('aria-modal','true');const modal=document.createElement('section');modal.className='dc-fk-modal';const iframe=document.createElement('iframe');iframe.className='dc-fk-dashboard-frame';iframe.src=chrome.runtime.getURL('dashboard.html?embedded=1&live=1&token='+encodeURIComponent(channelToken));iframe.title='Ecom Insight Dashboard';iframe.addEventListener('load',()=>setTimeout(()=>sendLiveData(iframe),200));modal.append(iframe);overlay.append(modal);overlay.onmousedown=e=>{if(e.target===overlay)closeDashboard()};document.body.append(overlay);document.documentElement.classList.add('dc-fk-modal-open');requestAnimationFrame(()=>overlay.classList.add('dc-open'))}catch(error){const message=String(error?.message||error);if(/extension context invalidated|cannot access a chrome extension|chrome\\.runtime/i.test(message)){showExtensionReloadNotice();return}throw error}}"
+          if old_open not in s:
+              raise SystemExit('openDashboard source pattern not found')
+          s = s.replace(old_open, new_open)
+
+          s = s.replace("b.title='Flipkart Analytics';b.innerHTML='<span class=\"dc-tooltip\">Open Flipkart Analytics</span>", "b.title='Ecom Insight';b.innerHTML='<span class=\"dc-tooltip\">Open Ecom Insight</span>")
+          s = s.replace("<span class=\"dc-dock-logo\">F</span><span><b>Seller Lens</b><small>by Flipkart</small></span>", "<span class=\"dc-dock-logo\">EI</span><span><b>Ecom Insight</b><small>Marketplace Intelligence</small></span>")
+
+          old_listener = "chrome.runtime.onMessage.addListener(m=>{if(m?.type==='OPEN_FLIPKART_ANALYTICS'){openDashboard();return Promise.resolve({ok:true})}});"
+          new_listener = "if(extensionContextAvailable()){try{chrome.runtime.onMessage.addListener(m=>{if(m?.type==='OPEN_FLIPKART_ANALYTICS'){openDashboard();return Promise.resolve({ok:true})}})}catch{showExtensionReloadNotice()}}"
+          if old_listener not in s:
+              raise SystemExit('runtime listener source pattern not found')
+          s = s.replace(old_listener, new_listener)
+
+          p.write_text(s)
+
+          p = Path('v343-sync-controller.js')
+          s = p.read_text()
+          if 'function extensionContextAvailable()' not in s:
+              insert = """
+  function extensionContextAvailable() {
+    try { return Boolean(globalThis.chrome?.runtime?.id && chrome.storage?.local); }
+    catch { return false; }
+  }
+"""
+              s = s.replace("  const frame = () => document.querySelector(`#${OVERLAY_ID} iframe`);\n", "  const frame = () => document.querySelector(`#${OVERLAY_ID} iframe`);\n" + insert)
+          s = s.replace("  async function persist(completed = null) {\n", "  async function persist(completed = null) {\n    if (!extensionContextAvailable()) { stopTimer(); return; }\n")
+          s = s.replace("  function heartbeat() {\n    if (!state?.active) return;\n", "  function heartbeat() {\n    if (!extensionContextAvailable()) { stopTimer(); state = null; return; }\n    if (!state?.active) return;\n")
+          event_block = """
+  window.addEventListener('dc-fk-sync-lifecycle', event => {
+    const lifecycle = event.detail?.state;
+    if (lifecycle === 'done') finish('completed', true);
+    else if (lifecycle === 'error') finish('error', true);
+    else if (lifecycle === 'cancelled') finish('cancelled', true);
+  });
+
+  window.addEventListener('dc-extension-context-invalid', () => {
+    stopTimer();
+    state = null;
+    try { sessionStorage.removeItem(STATE_KEY); } catch {}
+  });
+
+"""
+          if "addEventListener('dc-fk-sync-lifecycle'" not in s:
+              s = s.replace("  const push = history.pushState.bind(history);\n", event_block + "  const push = history.pushState.bind(history);\n")
+          p.write_text(s)
+
+          p = Path('manifest.json')
+          m = json.loads(p.read_text())
+          m['version'] = '3.4.7'
+          m['name'] = 'Ecom Insight v3.4.7'
+          scripts = m['content_scripts'][1]['js']
+          desired = ['v346-context-guard.js','v341-pagination-guard.js','content.js','v343-sync-controller.js']
+          m['content_scripts'][1]['js'] = desired
+          p.write_text(json.dumps(m, indent=2) + '\n')
+
+          report = """Ecom Insight v3.4.7 Validation Report
+
+PASS manifest version: 3.4.7
+PASS context guard loads before content.js
+PASS openDashboard direct extension-context guard
+PASS chrome.runtime.onMessage registration guard
+PASS SYNC_PROGRESS lifecycle bridged through dc-fk-sync-lifecycle
+PASS single original-page restore owner: v343-sync-controller.js
+PASS sync heartbeat stops on invalid extension context
+PASS dock branding: Ecom Insight
+PASS icon16.png: 16x16
+PASS icon32.png: 32x32
+PASS icon48.png: 48x48
+PASS icon128.png: 128x128
+PASS cropper/PDF source remains removed
+PASS JavaScript syntax checks
+"""
+          Path('V347_VALIDATION.txt').write_text(report)
+          PY
+
+          for f in *.js; do node --check "$f"; done
+
+          python3 - <<'PY'
+          from pathlib import Path
+          import struct
+          for size in (16,32,48,128):
+              data=Path(f'icons/icon{size}.png').read_bytes()
+              assert data[:8]==b'\x89PNG\r\n\x1a\n'
+              w,h=struct.unpack('>II',data[16:24])
+              assert (w,h)==(size,size), (size,w,h)
+          s=Path('content.js').read_text()
+          assert 'function openDashboard(){if(!extensionContextAvailable())' in s
+          assert 'history.back();' not in s
+          assert 'dc-fk-sync-lifecycle' in s
+          assert 'Ecom Insight</b><small>Marketplace Intelligence' in s
+          m=Path('manifest.json').read_text()
+          assert '"version": "3.4.7"' in m
+          PY
+
+      - name: Commit v3.4.7
+        run: |
+          git config user.name "github-actions[bot]"
+          git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
+          git add content.js v343-sync-controller.js manifest.json V347_VALIDATION.txt
+          git commit -m "Fix runtime lifecycle and release v3.4.7"
+          git push

@@ -30,9 +30,7 @@
       if (state) sessionStorage.setItem(STATE_KEY, JSON.stringify(state));
       else sessionStorage.removeItem(STATE_KEY);
     } catch {}
-    try {
-      await chrome.storage.local.set({ [STATE_KEY]: completed || state });
-    } catch {}
+    try { await chrome.storage.local.set({ [STATE_KEY]: completed || state }); } catch {}
   }
 
   function stopTimer() {
@@ -41,22 +39,24 @@
   }
 
   function emitDiagnostic(type, detail = {}) {
-    try { window.dispatchEvent(new CustomEvent('dc-fk-runtime-diagnostic', { detail: { type, at: Date.now(), ...detail } })); }
+    try { window.dispatchEvent(new CustomEvent('dc-fk-runtime-diagnostic', { detail: { type, at: Date.now(), syncId: state?.id || detail.syncId || null, ...detail } })); }
     catch {}
   }
 
   async function finish(result, restore = true) {
     if (!state || finishing) return;
     finishing = true;
+    const syncId = state.id;
     const completed = { ...state, active: false, result, finishedAt: Date.now(), finalUrl: location.href };
     const originalUrl = validUrl(state.originalUrl);
+    const requiresRestore = Boolean(restore && originalUrl && !sameUrl(location.href, originalUrl));
     state = null;
     stopTimer();
     await persist(completed);
-    emitDiagnostic('sync-finished', { result, originalUrl, finalUrl: location.href });
-    if (restore && originalUrl && !sameUrl(location.href, originalUrl) && !restoreIssued) {
+    emitDiagnostic('sync-finished', { syncId, result, originalUrl, finalUrl: location.href, requiresRestore });
+    if (requiresRestore && !restoreIssued) {
       restoreIssued = true;
-      emitDiagnostic('restore-issued', { result, originalUrl, fromUrl: location.href });
+      emitDiagnostic('restore-issued', { syncId, result, originalUrl, fromUrl: location.href });
       location.assign(originalUrl);
     }
     finishing = false;
@@ -71,9 +71,10 @@
   function heartbeat() {
     if (!extensionContextAvailable()) {
       stopTimer();
+      const syncId = state?.id || null;
       state = null;
       try { sessionStorage.removeItem(STATE_KEY); } catch {}
-      emitDiagnostic('context-invalid-heartbeat-stop');
+      emitDiagnostic('context-invalid-heartbeat-stop', { syncId });
       return;
     }
     if (!state?.active) return;
@@ -89,10 +90,8 @@
       state.lastStallAt = now;
       lastChangeAt = now;
       persist();
-      emitDiagnostic('sync-stall', { stallCount: state.stallCount, elapsedMs: now - state.startedAt });
-      try {
-        frame()?.contentWindow?.postMessage({ source: 'DC_FK_HOST', type: 'SYNC_WATCHDOG_STALL', payload: { stallCount: state.stallCount, elapsedMs: now - state.startedAt } }, '*');
-      } catch {}
+      emitDiagnostic('sync-stall', { syncId: state.id, stallCount: state.stallCount, elapsedMs: now - state.startedAt });
+      try { frame()?.contentWindow?.postMessage({ source: 'DC_FK_HOST', type: 'SYNC_WATCHDOG_STALL', payload: { stallCount: state.stallCount, elapsedMs: now - state.startedAt } }, '*'); } catch {}
     }
     if (now - state.startedAt >= MAX_SYNC_MS) finish('timeout', true);
   }
@@ -121,7 +120,7 @@
     lastChangeAt = Date.now();
     persist();
     startTimer();
-    emitDiagnostic('sync-started', { id: state.id, originalUrl: state.originalUrl });
+    emitDiagnostic('sync-started', { syncId: state.id, originalUrl: state.originalUrl });
   }
 
   function markNavigation() {
@@ -131,7 +130,7 @@
       state.visitedUrls.push(location.href);
       state.visitedUrls = state.visitedUrls.slice(-30);
       state.navigationCount++;
-      emitDiagnostic('sync-navigation', { url: location.href, navigationCount: state.navigationCount });
+      emitDiagnostic('sync-navigation', { syncId: state.id, url: location.href, navigationCount: state.navigationCount });
     }
     persist();
   }
@@ -149,7 +148,7 @@
     if (!trustedDashboardMessage(event)) return;
     const type = event.data?.type;
     if (type === 'AUTO_SYNC_ALL') begin();
-    if (type === 'CANCEL_AUTO_SYNC') emitDiagnostic('cancel-requested');
+    if (type === 'CANCEL_AUTO_SYNC') emitDiagnostic('cancel-requested', { syncId: state?.id || null });
   }, true);
 
   window.addEventListener('dc-fk-sync-lifecycle', event => {
@@ -160,19 +159,12 @@
   });
 
   window.addEventListener('dc-extension-context-invalid', () => {
+    const syncId = state?.id || null;
     stopTimer();
     state = null;
     finishing = false;
     try { sessionStorage.removeItem(STATE_KEY); } catch {}
-    emitDiagnostic('context-invalid-cleanup');
-  });
-
-  window.addEventListener('dc-fk-test-timeout', () => {
-    if (!state?.active) begin();
-    if (state) {
-      state.startedAt = Date.now() - MAX_SYNC_MS - 1000;
-      heartbeat();
-    }
+    emitDiagnostic('context-invalid-cleanup', { syncId });
   });
 
   const push = history.pushState.bind(history);
@@ -187,7 +179,7 @@
     const recovered = JSON.parse(sessionStorage.getItem(STATE_KEY) || 'null');
     if (recovered?.active && extensionContextAvailable()) {
       state = recovered;
-      restoreIssued = false;
+      restoreIssued = Boolean(recovered.restoreIssuedAt);
       if (Date.now() - Number(state.startedAt || 0) >= MAX_SYNC_MS) finish('expired', true);
       else { lastFingerprint = fingerprint(); lastChangeAt = Date.now(); startTimer(); markNavigation(); }
     }

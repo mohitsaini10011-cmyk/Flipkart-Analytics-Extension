@@ -97,6 +97,7 @@
     loadRuntime('v341-seller-identity.js', 'v341-seller-identity');
     loadRuntime('v341-orders-parser.js', 'v341-orders-parser');
     loadRuntime('v341-returns-parser.js', 'v341-returns-parser');
+    loadRuntime('v341-payments-parser.js', 'v341-payments-parser');
   }
 
   if (document.readyState === 'loading') {

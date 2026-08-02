@@ -1,13 +1,16 @@
 'use strict';
 (() => {
-  const IDS = ['dc-flipkart-analytics-launcher', 'dc-flipkart-analytics-dock'];
-
   function extensionContextAvailable() {
     try {
       return Boolean(globalThis.chrome?.runtime?.id && typeof chrome.runtime.getURL === 'function');
     } catch {
       return false;
     }
+  }
+
+  function emitDiagnostic(type, detail = {}) {
+    try { window.dispatchEvent(new CustomEvent('dc-fk-runtime-diagnostic', { detail: { type, at: Date.now(), ...detail } })); }
+    catch {}
   }
 
   function showReloadNotice() {
@@ -35,6 +38,7 @@
     }
     clearTimeout(notice._dcTimer);
     notice._dcTimer = setTimeout(() => notice.remove(), 9000);
+    emitDiagnostic('reload-notice-shown');
   }
 
   function guardClick(event) {
@@ -46,6 +50,7 @@
   }
 
   window.addEventListener('click', guardClick, true);
+  window.addEventListener('dc-extension-context-invalid', showReloadNotice);
 
   window.addEventListener('error', event => {
     const message = String(event?.error?.message || event?.message || '');

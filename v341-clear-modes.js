@@ -13,46 +13,23 @@
     };
     await chrome.storage.local.set({ [CAPTURE_KEY]: control });
     try {
-      window.parent.postMessage({
-        source: 'DC_FK_DASHBOARD',
-        type: 'CLEAR_DATA_GENERATION',
-        payload: {
-          generation: control.generation,
-          clearTimestamp: control.clearTimestamp
-        },
-        token: CHANNEL_TOKEN
-      }, '*');
+      window.parent.postMessage({ source: 'DC_FK_DASHBOARD', type: 'CLEAR_DATA_GENERATION', payload: { generation: control.generation, clearTimestamp: control.clearTimestamp }, token: CHANNEL_TOKEN }, '*');
     } catch {}
     return control;
   }
 
   function resetArrays(mode) {
-    if (mode === 'orders') {
-      rows = [];
-      return;
-    }
-    if (mode === 'orders_returns') {
-      rows = [];
-      unmatchedReturns = [];
-      return;
-    }
+    if (mode === 'orders') { rows = []; return; }
+    if (mode === 'orders_returns') { rows = []; unmatchedReturns = []; return; }
     if (mode === 'orders_financial') {
-      rows = [];
-      financialLedger = [];
-      unmatchedFinancials = [];
+      rows = []; financialLedger = []; unmatchedFinancials = [];
       if (typeof manualReviewFinancials !== 'undefined') manualReviewFinancials = [];
       return;
     }
     if (mode === 'all') {
-      rows = [];
-      inventoryRows = [];
-      financialLedger = [];
-      unmatchedReturns = [];
-      unmatchedFinancials = [];
+      rows = []; inventoryRows = []; financialLedger = []; unmatchedReturns = []; unmatchedFinancials = [];
       if (typeof manualReviewFinancials !== 'undefined') manualReviewFinancials = [];
-      syncHistory = [];
-      lastLiveSync = null;
-      skuCosts = {};
+      syncHistory = []; lastLiveSync = null; skuCosts = {};
     }
   }
 
@@ -64,9 +41,7 @@
         : mode === 'orders_financial'
           ? 'Orders, settlements, payments aur unmatched financial records clear honge.'
           : 'Is seller ka orders, returns, inventory, financial ledger, costs aur sync history sab clear hoga.';
-
     if (!confirm(`${label}?\n\n${warning}\n\nCapture Sync Now tak paused rahega.`)) return;
-
     const buttons = document.querySelectorAll('[data-clear-mode], #resetExtension');
     buttons.forEach(button => { button.disabled = true; });
     try {
@@ -97,25 +72,29 @@
   function installClearModes() {
     const oldClear = document.getElementById('clearOrders');
     if (!oldClear || document.getElementById('clearOrdersReturns')) return;
-
     const parent = oldClear.parentElement;
     const first = makeButton('clearOrders', 'Clear Orders only', 'orders');
     oldClear.replaceWith(first);
     first.insertAdjacentElement('afterend', makeButton('clearOrdersReturns', 'Clear Orders + Returns', 'orders_returns'));
     document.getElementById('clearOrdersReturns').insertAdjacentElement('afterend', makeButton('clearOrdersFinancial', 'Clear Orders + Financial Ledger', 'orders_financial'));
-
     const reset = document.getElementById('resetExtension');
-    if (reset) {
-      const replacement = makeButton('resetExtension', 'Clear all seller data', 'all');
-      reset.replaceWith(replacement);
-    } else if (parent) {
-      parent.appendChild(makeButton('resetExtension', 'Clear all seller data', 'all'));
-    }
+    if (reset) reset.replaceWith(makeButton('resetExtension', 'Clear all seller data', 'all'));
+    else if (parent) parent.appendChild(makeButton('resetExtension', 'Clear all seller data', 'all'));
+  }
+
+  function loadBackupRuntime() {
+    if (document.querySelector('script[data-runtime="v341-backup-schema"]')) return;
+    const script = document.createElement('script');
+    script.src = chrome.runtime.getURL('v341-backup-schema.js');
+    script.async = false;
+    script.dataset.runtime = 'v341-backup-schema';
+    (document.head || document.documentElement).appendChild(script);
   }
 
   if (document.readyState === 'loading') {
-    document.addEventListener('DOMContentLoaded', installClearModes, { once: true });
+    document.addEventListener('DOMContentLoaded', () => { installClearModes(); loadBackupRuntime(); }, { once: true });
   } else {
     installClearModes();
+    loadBackupRuntime();
   }
 })();

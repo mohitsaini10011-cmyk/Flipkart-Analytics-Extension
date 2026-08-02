@@ -1,3 +1,11 @@
-<svg xmlns="http://www.w3.org/2000/svg" width="128" height="128" viewBox="0 0 95 81" role="img" aria-label="Ecom Insight logo">
-  <image width="95" height="81" href="data:image/png;base64,iVBORw0KGgoAAAANSUhEUgAAAF8AAABRCAIAAAA7JO3SAAAQAE..."/>
+<svg xmlns="http://www.w3.org/2000/svg" width="128" height="128" viewBox="0 0 128 128" role="img" aria-label="Ecom Insight logo">
+  <rect width="128" height="128" rx="18" fill="#ffffff"/>
+  <path d="M65 18a43 43 0 1 0 0 86" fill="none" stroke="#0b4f9f" stroke-width="9" stroke-linecap="round"/>
+  <path d="M29 76c9 17 26 27 45 27" fill="none" stroke="#0b4f9f" stroke-width="5" stroke-linecap="round"/>
+  <rect x="35" y="57" width="10" height="30" rx="2" fill="#1f6bb8"/>
+  <rect x="49" y="42" width="10" height="45" rx="2" fill="#68b82e"/>
+  <rect x="63" y="27" width="10" height="60" rx="2" fill="#8dca3d"/>
+  <circle cx="82" cy="70" r="20" fill="#ffffff" stroke="#0b4f9f" stroke-width="7"/>
+  <circle cx="82" cy="70" r="12" fill="none" stroke="#5d8fbd" stroke-width="3"/>
+  <path d="M96 84l20 20" stroke="#0b4f9f" stroke-width="8" stroke-linecap="round"/>
 </svg>

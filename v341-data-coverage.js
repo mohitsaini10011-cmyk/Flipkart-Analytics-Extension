@@ -10,12 +10,7 @@
   function currentSellerIdentity() {
     const seller = connectedSeller || latestSellerInfo || {};
     const stableKey = slug(seller.stableKey || seller.id || seller.name || 'unassigned');
-    return {
-      stableKey,
-      name: text(seller.name),
-      id: text(seller.id),
-      storageKey: COVERAGE_PREFIX + stableKey
-    };
+    return { stableKey, name: text(seller.name), id: text(seller.id), storageKey: COVERAGE_PREFIX + stableKey };
   }
 
   function emptyState(identity = currentSellerIdentity()) {
@@ -24,10 +19,7 @@
       sellerName: identity.name,
       sellerId: identity.id,
       modules: Object.fromEntries(MODULES.map(key => [key, { status: 'not-scanned', records: 0, source: 'none', updatedAt: null }])),
-      mode: 'not-scanned',
-      importedReports: 0,
-      lastFullSyncAt: null,
-      lastUpdatedAt: null
+      mode: 'not-scanned', importedReports: 0, lastFullSyncAt: null, lastUpdatedAt: null
     };
   }
 
@@ -39,15 +31,7 @@
     if (identity.stableKey === 'unassigned') return;
     const data = await chrome.storage.local.get([LEGACY_COVERAGE_KEY, identity.storageKey]);
     if (!data[identity.storageKey] && data[LEGACY_COVERAGE_KEY] && typeof data[LEGACY_COVERAGE_KEY] === 'object') {
-      const migrated = {
-        ...emptyState(identity),
-        ...data[LEGACY_COVERAGE_KEY],
-        sellerKey: identity.stableKey,
-        sellerName: identity.name,
-        sellerId: identity.id,
-        migratedFromGlobalCoverage: true,
-        migratedAt: Date.now()
-      };
+      const migrated = { ...emptyState(identity), ...data[LEGACY_COVERAGE_KEY], sellerKey: identity.stableKey, sellerName: identity.name, sellerId: identity.id, migratedFromGlobalCoverage: true, migratedAt: Date.now() };
       migrated.modules = { ...emptyState(identity).modules, ...(data[LEGACY_COVERAGE_KEY].modules || {}) };
       await chrome.storage.local.set({ [identity.storageKey]: migrated });
     }
@@ -92,9 +76,7 @@
   }
 
   function deriveOverallMode() {
-    const values = Object.values(state.modules);
-    const complete = values.filter(item => item.status === 'complete').length;
-    const partial = values.filter(item => item.status === 'partial').length;
+    const values = Object.values(state.modules), complete = values.filter(item => item.status === 'complete').length, partial = values.filter(item => item.status === 'partial').length;
     if (complete === MODULES.length) return 'full-account';
     if (complete || partial) return 'partial-account';
     if (state.importedReports > 0) return 'imported-reports';
@@ -102,24 +84,14 @@
   }
 
   function labelForMode(mode) {
-    return {
-      'full-account': '🟢 Full Account Coverage',
-      'partial-account': '🟡 Partial Account Coverage',
-      'imported-reports': '🔵 Imported Report Coverage',
-      'not-scanned': '🔴 Not Scanned'
-    }[mode] || '🔴 Not Scanned';
+    return { 'full-account': '🟢 Full Account Coverage', 'partial-account': '🟡 Partial Account Coverage', 'imported-reports': '🔵 Imported Report Coverage', 'not-scanned': '🔴 Not Scanned' }[mode] || '🔴 Not Scanned';
   }
 
   function ensurePanel() {
     const overview = document.getElementById('overview');
     if (!overview) return null;
     let panel = document.getElementById('dataCoveragePanel');
-    if (!panel) {
-      panel = document.createElement('article');
-      panel.id = 'dataCoveragePanel';
-      panel.className = 'panel';
-      overview.querySelector('.kpis')?.insertAdjacentElement('afterend', panel);
-    }
+    if (!panel) { panel = document.createElement('article'); panel.id = 'dataCoveragePanel'; panel.className = 'panel'; overview.querySelector('.kpis')?.insertAdjacentElement('afterend', panel); }
     return panel;
   }
 
@@ -127,12 +99,9 @@
     state.mode = deriveOverallMode();
     const panel = ensurePanel();
     if (!panel) return;
-    const sellerLabel = state.sellerName || state.sellerId || activeIdentity.stableKey === 'unassigned' ? (state.sellerName || state.sellerId || 'Unassigned seller') : activeIdentity.stableKey;
+    const sellerLabel = state.sellerName || state.sellerId || (activeIdentity.stableKey === 'unassigned' ? 'Unassigned seller' : activeIdentity.stableKey);
     const cards = MODULES.map(key => {
-      const item = state.modules[key] || {};
-      const icon = item.status === 'complete' ? '✓' : item.status === 'partial' ? '◐' : item.status === 'skipped' ? '—' : '○';
-      const label = key.charAt(0).toUpperCase() + key.slice(1);
-      const source = text(item.source || 'none').replaceAll('-', ' ');
+      const item = state.modules[key] || {}, icon = item.status === 'complete' ? '✓' : item.status === 'partial' ? '◐' : item.status === 'skipped' ? '—' : '○', label = key.charAt(0).toUpperCase() + key.slice(1), source = text(item.source || 'none').replaceAll('-', ' ');
       return `<div class="kpi"><small>${icon} ${label}</small><strong>${Number(item.records || 0).toLocaleString('en-IN')}</strong><small>${source}</small></div>`;
     }).join('');
     panel.innerHTML = `<div class="panel-head"><div><h3>Data Coverage</h3><small>Seller: ${sellerLabel} · ${labelForMode(state.mode)}</small></div><small>${state.lastUpdatedAt ? 'Updated ' + new Date(state.lastUpdatedAt).toLocaleTimeString('en-IN') : 'Waiting for sync'}</small></div><div class="kpis">${cards}</div>`;
@@ -140,18 +109,10 @@
 
   async function updateFromLive(payload) {
     await ensureCurrentSeller();
-    const module = text(payload?.meta?.module);
-    const coverage = text(payload?.meta?.coverage);
-    const networkCount = Array.isArray(payload?.network) ? payload.network.length : 0;
-    const domTables = Array.isArray(payload?.dom?.tables) ? payload.dom.tables.reduce((sum, table) => sum + (table.rows?.length || 0), 0) : 0;
-    const source = networkCount ? 'captured-api' : domTables ? 'visible-page' : 'no-records';
-    if (module && state.modules[module]) {
-      state.modules[module] = { status: /complete/.test(coverage) ? 'complete' : 'partial', records: Math.max(countMapped(module), domTables, networkCount), source, updatedAt: Date.now() };
-    } else {
-      for (const key of MODULES) if (payload?.dom?.modules?.[key]) state.modules[key] = { status: 'partial', records: Math.max(countMapped(key), domTables, networkCount), source, updatedAt: Date.now() };
-    }
-    await saveCoverage();
-    renderCoverage();
+    const module = text(payload?.meta?.module), coverage = text(payload?.meta?.coverage), networkCount = Array.isArray(payload?.network) ? payload.network.length : 0, domTables = Array.isArray(payload?.dom?.tables) ? payload.dom.tables.reduce((sum, table) => sum + (table.rows?.length || 0), 0) : 0, source = networkCount ? 'captured-api' : domTables ? 'visible-page' : 'no-records';
+    if (module && state.modules[module]) state.modules[module] = { status: /complete/.test(coverage) ? 'complete' : 'partial', records: Math.max(countMapped(module), domTables, networkCount), source, updatedAt: Date.now() };
+    else for (const key of MODULES) if (payload?.dom?.modules?.[key]) state.modules[key] = { status: 'partial', records: Math.max(countMapped(key), domTables, networkCount), source, updatedAt: Date.now() };
+    await saveCoverage(); renderCoverage();
   }
 
   async function updateFromProgress(progress) {
@@ -165,8 +126,7 @@
       }
       state.lastFullSyncAt = Date.now();
     }
-    await saveCoverage();
-    renderCoverage();
+    await saveCoverage(); renderCoverage();
   }
 
   window.addEventListener('message', event => {
@@ -178,22 +138,14 @@
   document.getElementById('fileInput')?.addEventListener('change', async event => {
     const count = event.target?.files?.length || 0;
     if (!count) return;
-    await ensureCurrentSeller();
-    state.importedReports += count;
-    await saveCoverage();
-    renderCoverage();
+    await ensureCurrentSeller(); state.importedReports += count; await saveCoverage(); renderCoverage();
   });
 
   window.DCFKCoverage = {
     getCurrent: () => ({ ...state, modules: structuredClone(state.modules) }),
     getStorageKey: () => currentSellerIdentity().storageKey,
     reloadForCurrentSeller: () => loadForSeller(currentSellerIdentity()),
-    clearCurrentSeller: async () => {
-      const identity = currentSellerIdentity();
-      await chrome.storage.local.remove(identity.storageKey);
-      state = emptyState(identity);
-      renderCoverage();
-    }
+    clearCurrentSeller: async () => { const identity = currentSellerIdentity(); await chrome.storage.local.remove(identity.storageKey); state = emptyState(identity); renderCoverage(); }
   };
 
   loadForSeller(activeIdentity).catch(error => console.warn('[Flipkart Analytics] Coverage load failed', error));

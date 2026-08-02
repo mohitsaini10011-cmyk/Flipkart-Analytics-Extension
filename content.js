@@ -16,6 +16,17 @@
   const text=el=>String(el?.innerText||el?.textContent||'').replace(/\s+/g,' ').trim();
   const num=v=>Number(String(v||'').replace(/[^0-9.-]/g,''))||0;
 
+  function extensionContextAvailable(){
+    try{return Boolean(globalThis.chrome?.runtime?.id&&typeof chrome.runtime.getURL==='function'&&chrome.storage?.local)}catch{return false}
+  }
+  function showExtensionReloadNotice(){
+    try{window.dispatchEvent(new CustomEvent('dc-extension-context-invalid'))}catch{}
+  }
+  function guardedStorageSet(value){
+    if(!extensionContextAvailable())return Promise.resolve();
+    try{return chrome.storage.local.set(value)}catch{return Promise.resolve()}
+  }
+
   function syncBridgeCaptureControl(){
     if(!bridgeToken||!captureInitialized)return;
     window.postMessage({source:'DC_FK_CONTENT',type:'SET_CAPTURE_GENERATION',generation:captureGeneration,clearTimestamp,paused:capturePaused,syncJobId:activeSyncJobId,token:bridgeToken},'*');
@@ -24,6 +35,7 @@
   }
   async function initializeCaptureControl(){
     try{
+      if(!extensionContextAvailable())throw new Error('Extension context unavailable');
       const stored=(await chrome.storage.local.get(CAPTURE_KEY))[CAPTURE_KEY]||{};
       captureGeneration=Math.max(1,Number(stored.generation||1));
       capturePaused=Boolean(stored.paused);
@@ -41,7 +53,7 @@
     }
   }
   async function persistCaptureControl(){
-    await chrome.storage.local.set({[CAPTURE_KEY]:{generation:captureGeneration,paused:capturePaused,clearTimestamp,activeSyncJobId}});
+    await guardedStorageSet({[CAPTURE_KEY]:{generation:captureGeneration,paused:capturePaused,clearTimestamp,activeSyncJobId}});
   }
 
   function closeDashboard(){syncCancelled=true;syncGeneration++;const o=document.getElementById(OVERLAY_ID);if(!o)return;o.classList.add('dc-closing');document.documentElement.classList.remove('dc-fk-modal-open');setTimeout(()=>o.remove(),180)}
@@ -133,7 +145,7 @@
     if(window.__DC_FK_AUTO_SYNCING__||!captureInitialized)return;
     window.__DC_FK_AUTO_SYNCING__=true;syncCancelled=false;capturePaused=false;activeSyncJobId=crypto.randomUUID();
     await persistCaptureControl();syncBridgeCaptureControl();
-    const generation=++syncGeneration,originalUrl=location.href;
+    const generation=++syncGeneration;
     const targets=[...MODULE_TARGETS],results=[];
     try{
       frame?.contentWindow?.postMessage({source:'DC_FK_HOST',type:'SYNC_PROGRESS',payload:{state:'start',total:targets.length,mode:'full-account'},token:channelToken},'*');
@@ -145,25 +157,38 @@
         results.push({module:target.key,status:captured?'captured':'cancelled',url:location.href});
       }
       const success=results.filter(x=>x.status==='captured').length;
-      if(!syncCancelled&&generation===syncGeneration&&location.href!==originalUrl){
-        history.back();
-        await sleep(1200);
-      }
-      frame?.contentWindow?.postMessage({source:'DC_FK_HOST',type:'SYNC_PROGRESS',payload:{state:syncCancelled?'cancelled':'done',success,total:targets.length,results,restored:location.href===originalUrl,mode:'full-account'},token:channelToken},'*');
+      const state=syncCancelled?'cancelled':'done';
+      frame?.contentWindow?.postMessage({source:'DC_FK_HOST',type:'SYNC_PROGRESS',payload:{state,success,total:targets.length,results,mode:'full-account'},token:channelToken},'*');
+      window.dispatchEvent(new CustomEvent('dc-fk-sync-lifecycle',{detail:{state,success,total:targets.length,results}}));
     }catch(err){
-      frame?.contentWindow?.postMessage({source:'DC_FK_HOST',type:'SYNC_PROGRESS',payload:{state:'error',message:String(err?.message||err),results},token:channelToken},'*');
+      const message=String(err?.message||err);
+      frame?.contentWindow?.postMessage({source:'DC_FK_HOST',type:'SYNC_PROGRESS',payload:{state:'error',message,results},token:channelToken},'*');
+      window.dispatchEvent(new CustomEvent('dc-fk-sync-lifecycle',{detail:{state:'error',message,results}}));
     }finally{window.__DC_FK_AUTO_SYNCING__=false}
   }
-  function openDashboard(){const existing=document.getElementById(OVERLAY_ID);if(existing){existing.classList.remove('dc-closing');sendLiveData(existing.querySelector('iframe'));return}const overlay=document.createElement('div');overlay.id=OVERLAY_ID;overlay.setAttribute('role','dialog');overlay.setAttribute('aria-modal','true');const modal=document.createElement('section');modal.className='dc-fk-modal',iframe=document.createElement('iframe');iframe.className='dc-fk-dashboard-frame';iframe.src=chrome.runtime.getURL('dashboard.html?embedded=1&live=1&token='+encodeURIComponent(channelToken));iframe.title='Flipkart Analytics Dashboard';iframe.addEventListener('load',()=>setTimeout(()=>sendLiveData(iframe),200));modal.append(iframe);overlay.append(modal);overlay.onmousedown=e=>{if(e.target===overlay)closeDashboard()};document.body.append(overlay);document.documentElement.classList.add('dc-fk-modal-open');requestAnimationFrame(()=>overlay.classList.add('dc-open'))}
-  function mountLauncher(){if(document.getElementById(LAUNCHER_ID)||!document.body)return;const b=document.createElement('button');b.id=LAUNCHER_ID;b.type='button';b.title='Flipkart Analytics';b.innerHTML='<span class="dc-tooltip">Open Flipkart Analytics</span><svg viewBox="0 0 32 32" fill="none"><path d="M7 25V14M14 25V8M21 25V17M27 25V5" stroke="#fff" stroke-width="2.4" stroke-linecap="round"/><path d="M4.5 25.5H28" stroke="#fff" stroke-width="2.2" stroke-linecap="round"/></svg>';b.onclick=openDashboard;document.body.append(b)}
-  function mountDock(){if(document.getElementById(DOCK_ID)||!document.body)return;const d=document.createElement('div');d.id=DOCK_ID;d.innerHTML='<button class="dc-dock-collapse">«</button><button class="dc-dock-main"><span class="dc-dock-logo">F</span><span><b>Seller Lens</b><small>by Flipkart</small></span></button><button class="dc-dock-off">Turn Off</button><button class="dc-dock-play">▶</button>';d.querySelector('.dc-dock-main').onclick=openDashboard;d.querySelector('.dc-dock-play').onclick=openDashboard;d.querySelector('.dc-dock-off').onclick=()=>{d.style.display='none';const launcher=document.getElementById(LAUNCHER_ID);if(launcher)launcher.style.display='grid'};d.querySelector('.dc-dock-collapse').onclick=()=>d.classList.toggle('dc-collapsed');document.body.append(d)}
-  chrome.runtime.onMessage.addListener(m=>{if(m?.type==='OPEN_FLIPKART_ANALYTICS'){openDashboard();return Promise.resolve({ok:true})}});
+  function openDashboard(){
+    if(!extensionContextAvailable()){showExtensionReloadNotice();return}
+    try{
+      const existing=document.getElementById(OVERLAY_ID);if(existing){existing.classList.remove('dc-closing');sendLiveData(existing.querySelector('iframe'));return}
+      const overlay=document.createElement('div');overlay.id=OVERLAY_ID;overlay.setAttribute('role','dialog');overlay.setAttribute('aria-modal','true');
+      const modal=document.createElement('section');modal.className='dc-fk-modal';
+      const iframe=document.createElement('iframe');iframe.className='dc-fk-dashboard-frame';iframe.src=chrome.runtime.getURL('dashboard.html?embedded=1&live=1&token='+encodeURIComponent(channelToken));iframe.title='Ecom Insight Dashboard';iframe.addEventListener('load',()=>setTimeout(()=>sendLiveData(iframe),200));
+      modal.append(iframe);overlay.append(modal);overlay.onmousedown=e=>{if(e.target===overlay)closeDashboard()};document.body.append(overlay);document.documentElement.classList.add('dc-fk-modal-open');requestAnimationFrame(()=>overlay.classList.add('dc-open'));
+    }catch(error){
+      const message=String(error?.message||error);if(/extension context invalidated|cannot access a chrome extension|chrome\.runtime/i.test(message)){showExtensionReloadNotice();return}throw error;
+    }
+  }
+  function mountLauncher(){if(document.getElementById(LAUNCHER_ID)||!document.body)return;const b=document.createElement('button');b.id=LAUNCHER_ID;b.type='button';b.title='Ecom Insight';b.innerHTML='<span class="dc-tooltip">Open Ecom Insight</span><svg viewBox="0 0 32 32" fill="none"><path d="M7 25V14M14 25V8M21 25V17M27 25V5" stroke="#fff" stroke-width="2.4" stroke-linecap="round"/><path d="M4.5 25.5H28" stroke="#fff" stroke-width="2.2" stroke-linecap="round"/></svg>';b.onclick=openDashboard;document.body.append(b)}
+  function mountDock(){if(document.getElementById(DOCK_ID)||!document.body)return;const d=document.createElement('div');d.id=DOCK_ID;d.innerHTML='<button class="dc-dock-collapse">«</button><button class="dc-dock-main"><span class="dc-dock-logo">EI</span><span><b>Ecom Insight</b><small>Marketplace Intelligence</small></span></button><button class="dc-dock-off">Turn Off</button><button class="dc-dock-play">▶</button>';d.querySelector('.dc-dock-main').onclick=openDashboard;d.querySelector('.dc-dock-play').onclick=openDashboard;d.querySelector('.dc-dock-off').onclick=()=>{d.style.display='none';const launcher=document.getElementById(LAUNCHER_ID);if(launcher)launcher.style.display='grid'};d.querySelector('.dc-dock-collapse').onclick=()=>d.classList.toggle('dc-collapsed');document.body.append(d)}
+  if(extensionContextAvailable()){
+    try{chrome.runtime.onMessage.addListener(m=>{if(m?.type==='OPEN_FLIPKART_ANALYTICS'){openDashboard();return Promise.resolve({ok:true})}})}catch{showExtensionReloadNotice()}
+  }
   window.addEventListener('message',e=>{if(e.source!==window||e.data?.source!=='DC_FK_PAGE')return;if(e.data.type==='BRIDGE_READY'){bridgeToken=e.data.token||'';syncBridgeCaptureControl();return}if(!bridgeToken||e.data.token!==bridgeToken)return;if(e.data.type==='NETWORK_DATA'){if(!captureInitialized||capturePaused||Date.now()<capturePausedUntil||Number(e.data.captureGeneration||0)!==captureGeneration||Number(e.data.at||0)<=clearTimestamp)return;networkPayloads.push({url:e.data.url,data:e.data.data,kind:e.data.kind,at:Number(e.data.at||Date.now()),captureGeneration:Number(e.data.captureGeneration)});if(networkPayloads.length>80)networkPayloads.shift()}if(e.data.type==='NETWORK_BUFFER'){networkPayloads=(e.data.items||[]).filter(x=>Number(x.captureGeneration||0)===captureGeneration&&Number(x.at||0)>clearTimestamp)}});
   window.addEventListener('message',async e=>{const frame=document.querySelector('#'+OVERLAY_ID+' iframe');if(e.source!==frame?.contentWindow||e.data?.source!=='DC_FK_DASHBOARD'||e.data?.token!==channelToken)return;if(e.data?.type==='REQUEST_LIVE_DATA')sendLiveData(frame);if(e.data?.type==='AUTO_SYNC_ALL')autoSyncAll(frame);if(e.data?.type==='CANCEL_AUTO_SYNC'){syncCancelled=true;syncGeneration++}if(e.data?.type==='CLEAR_CAPTURE_BUFFER'){capturePausedUntil=Date.now()+5000;networkPayloads=[];window.postMessage({source:'DC_FK_CONTENT',type:'CLEAR_NETWORK_BUFFER',token:bridgeToken},'*')}if(e.data?.type==='CLEAR_DATA_GENERATION'){captureGeneration=Math.max(captureGeneration+1,Number(e.data.payload?.generation||0));clearTimestamp=Number(e.data.payload?.clearTimestamp||Date.now());capturePaused=true;activeSyncJobId=null;syncCancelled=true;syncGeneration++;networkPayloads=[];window.__DC_FK_AUTO_SYNCING__=false;await persistCaptureControl();syncBridgeCaptureControl()}if(e.data?.type==='RESUME_CAPTURE'){captureGeneration=Math.max(captureGeneration,Number(e.data.payload?.generation||captureGeneration));capturePaused=false;activeSyncJobId=e.data.payload?.syncJobId||crypto.randomUUID();clearTimestamp=Math.max(clearTimestamp,Number(e.data.payload?.clearTimestamp||0));await persistCaptureControl();syncBridgeCaptureControl()}});
   const mount=()=>{mountLauncher();mountDock();syncBridgeCaptureControl()};
   initializeCaptureControl();
-  setInterval(()=>{const f=document.querySelector('#'+OVERLAY_ID+' iframe');if(f)sendLiveData(f)},15000);
+  const liveTimer=setInterval(()=>{if(!extensionContextAvailable()){clearInterval(liveTimer);showExtensionReloadNotice();return}const f=document.querySelector('#'+OVERLAY_ID+' iframe');if(f)sendLiveData(f)},15000);
   document.readyState==='loading'?document.addEventListener('DOMContentLoaded',mount,{once:true}):mount();
   document.addEventListener('keydown',e=>{if(e.key==='Escape')closeDashboard()});
-  let mountTimer=0;new MutationObserver(()=>{clearTimeout(mountTimer);mountTimer=setTimeout(()=>{if(document.body){if(!document.getElementById(LAUNCHER_ID))mountLauncher();if(!document.getElementById(DOCK_ID))mountDock()}},500)}).observe(document.documentElement,{childList:true,subtree:true});
+  let mountTimer=0;const observer=new MutationObserver(()=>{clearTimeout(mountTimer);mountTimer=setTimeout(()=>{if(!extensionContextAvailable()){observer.disconnect();showExtensionReloadNotice();return}if(document.body){if(!document.getElementById(LAUNCHER_ID))mountLauncher();if(!document.getElementById(DOCK_ID))mountDock()}},500)});observer.observe(document.documentElement,{childList:true,subtree:true});
 })();

@@ -82,19 +82,24 @@
     else if (parent) parent.appendChild(makeButton('resetExtension', 'Clear all seller data', 'all'));
   }
 
-  function loadBackupRuntime() {
-    if (document.querySelector('script[data-runtime="v341-backup-schema"]')) return;
+  function loadRuntime(file, runtimeName) {
+    if (document.querySelector(`script[data-runtime="${runtimeName}"]`)) return;
     const script = document.createElement('script');
-    script.src = chrome.runtime.getURL('v341-backup-schema.js');
+    script.src = chrome.runtime.getURL(file);
     script.async = false;
-    script.dataset.runtime = 'v341-backup-schema';
+    script.dataset.runtime = runtimeName;
     (document.head || document.documentElement).appendChild(script);
   }
 
+  function loadAdditionalRuntimes() {
+    loadRuntime('v341-backup-schema.js', 'v341-backup-schema');
+    loadRuntime('v341-data-coverage.js', 'v341-data-coverage');
+  }
+
   if (document.readyState === 'loading') {
-    document.addEventListener('DOMContentLoaded', () => { installClearModes(); loadBackupRuntime(); }, { once: true });
+    document.addEventListener('DOMContentLoaded', () => { installClearModes(); loadAdditionalRuntimes(); }, { once: true });
   } else {
     installClearModes();
-    loadBackupRuntime();
+    loadAdditionalRuntimes();
   }
 })();

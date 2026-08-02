@@ -102,6 +102,7 @@
     loadRuntime('v341-xlsx-importer.js', 'v341-xlsx-importer');
     loadRuntime('v343-production-hardening.js', 'v343-production-hardening');
     loadRuntime('v343-logo.js', 'v343-logo');
+    loadRuntime('v344-remove-crop.js', 'v344-remove-crop');
   }
 
   if (document.readyState === 'loading') {

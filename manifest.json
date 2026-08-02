@@ -1,20 +1,12 @@
 {
   "manifest_version": 3,
-  "name": "Flipkart Analytics & Tools v3.4.4",
-  "version": "3.4.4",
-  "description": "Flipkart seller analytics with unified sync recovery, accounting gates, structured reconciliation and large-account diagnostics.",
-  "permissions": [
-    "storage",
-    "downloads",
-    "tabs",
-    "activeTab"
-  ],
-  "host_permissions": [
-    "https://seller.flipkart.com/*",
-    "https://*.seller.flipkart.com/*"
-  ],
+  "name": "Ecom Insight v3.4.5",
+  "version": "3.4.5",
+  "description": "Flipkart seller analytics with unified sync recovery, structured reconciliation, accounting gates and large-account diagnostics.",
+  "permissions": ["storage", "downloads", "tabs", "activeTab"],
+  "host_permissions": ["https://seller.flipkart.com/*", "https://*.seller.flipkart.com/*"],
   "action": {
-    "default_title": "Flipkart Analytics & Tools",
+    "default_title": "Ecom Insight",
     "default_icon": {
       "16": "icons/icon16.png",
       "32": "icons/icon32.png",
@@ -22,34 +14,18 @@
       "128": "icons/icon128.png"
     }
   },
-  "background": {
-    "service_worker": "background.js"
-  },
+  "background": { "service_worker": "background.js" },
   "content_scripts": [
     {
-      "matches": [
-        "https://seller.flipkart.com/*",
-        "https://*.seller.flipkart.com/*"
-      ],
-      "js": [
-        "page-bridge.js"
-      ],
+      "matches": ["https://seller.flipkart.com/*", "https://*.seller.flipkart.com/*"],
+      "js": ["page-bridge.js"],
       "run_at": "document_start",
       "world": "MAIN"
     },
     {
-      "matches": [
-        "https://seller.flipkart.com/*",
-        "https://*.seller.flipkart.com/*"
-      ],
-      "js": [
-        "v341-pagination-guard.js",
-        "content.js",
-        "v343-sync-controller.js"
-      ],
-      "css": [
-        "content.css"
-      ],
+      "matches": ["https://seller.flipkart.com/*", "https://*.seller.flipkart.com/*"],
+      "js": ["v341-pagination-guard.js", "content.js", "v343-sync-controller.js"],
+      "css": ["content.css"],
       "run_at": "document_start"
     }
   ],
@@ -67,7 +43,6 @@
         "app.js",
         "icons/*",
         "page-bridge.js",
-        "pdf-lib.min.js",
         "v34-core.js",
         "v341-migration-integrity.js",
         "v341-clear-modes.js",
@@ -80,14 +55,9 @@
         "v341-payments-parser.js",
         "v341-settlements-parser.js",
         "v341-xlsx-importer.js",
-        "v343-production-hardening.js",
-        "v343-logo.js",
-        "v344-remove-crop.js"
+        "v345-runtime.js"
       ],
-      "matches": [
-        "https://seller.flipkart.com/*",
-        "https://*.seller.flipkart.com/*"
-      ]
+      "matches": ["https://seller.flipkart.com/*", "https://*.seller.flipkart.com/*"]
     }
   ]
 }

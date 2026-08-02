@@ -77,7 +77,8 @@
         "v341-seller-identity.js",
         "v341-orders-parser.js",
         "v341-returns-parser.js",
-        "v341-payments-parser.js"
+        "v341-payments-parser.js",
+        "v341-settlements-parser.js"
       ],
       "matches": [
         "https://seller.flipkart.com/*",

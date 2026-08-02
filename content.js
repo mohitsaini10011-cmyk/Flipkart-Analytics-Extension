@@ -7,6 +7,10 @@
   let syncCancelled=false;
   let syncGeneration=0;
   let capturePausedUntil=0;
+  let captureGeneration=1;
+  let capturePaused=false;
+  let activeSyncJobId=null;
+  let clearTimestamp=0;
   const text=el=>String(el?.innerText||el?.textContent||'').replace(/\s+/g,' ').trim();
   const num=v=>Number(String(v||'').replace(/[^0-9.-]/g,''))||0;
   function closeDashboard(){syncCancelled=true;syncGeneration++;const o=document.getElementById(OVERLAY_ID);if(!o)return;o.classList.add('dc-closing');document.documentElement.classList.remove('dc-fk-modal-open');setTimeout(()=>o.remove(),180)}
@@ -42,7 +46,6 @@
       if(/account|profile|seller|merchant/i.test(String(el.className)+' '+(el.getAttribute('aria-label')||'')+' '+(el.getAttribute('data-testid')||'')))score+=4;
       pushCandidate(text(el),score);
     });
-    // Flipkart usually shows the account name in uppercase at the top-right.
     [...document.querySelectorAll('body *')].forEach(el=>{
       if(el.children.length>2)return;
       const v=text(el),r=el.getBoundingClientRect();
@@ -97,43 +100,45 @@
     const href=location.href.toLowerCase();const modules={orders:/order/.test(href),listings:/listing|catalog/.test(href)||!!scrapeListings().length,inventory:/inventory|stock/.test(href),payments:/payment/.test(href),returns:/return/.test(href),settlements:/settlement/.test(href)};return {url:location.href,title:document.title,metrics,tables,listings:scrapeListings(),sellerInfo:detectSellerInfo(),modules,capturedAt:new Date().toISOString()};
   }
   function requestNetworkBuffer(){if(bridgeToken)window.postMessage({source:'DC_FK_CONTENT',type:'GET_NETWORK_BUFFER',token:bridgeToken},'*');}
-  function sendLiveData(frame,meta={}){if(Date.now()<capturePausedUntil)return;requestNetworkBuffer();setTimeout(()=>frame?.contentWindow?.postMessage({source:'DC_FK_HOST',type:'LIVE_DATA',payload:{dom:scrapeVisiblePage(),network:networkPayloads.slice(-80),meta},token:channelToken},'*'),180)}
+  function sendLiveData(frame,meta={}){if(capturePaused||Date.now()<capturePausedUntil)return;const startedAt=Date.now();requestNetworkBuffer();setTimeout(()=>{if(capturePaused||startedAt<clearTimestamp)return;const snapshot=scrapeVisiblePage();frame?.contentWindow?.postMessage({source:'DC_FK_HOST',type:'LIVE_DATA',payload:{dom:snapshot,network:networkPayloads.slice(-80),meta:{...meta,captureGeneration,syncJobId:activeSyncJobId,captureStartedAt:startedAt,sellerNamespace:snapshot.sellerInfo?.id||snapshot.sellerInfo?.name||'unassigned',sourcePage:location.href}},token:channelToken},'*')},180)}
   const sleep=ms=>new Promise(r=>setTimeout(r,ms));
-  function findPortalNav(label){
-    const wanted=label.toLowerCase();
-    const els=[...document.querySelectorAll('a,button,[role="button"]')].filter(el=>{
-      if(el.closest('#'+OVERLAY_ID)||el.closest('#'+DOCK_ID)||el.id===LAUNCHER_ID)return false;
-      const t=text(el).toLowerCase();
-      return t===wanted||t.startsWith(wanted+' ')||t.endsWith(' '+wanted);
-    });
-    return els.sort((a,b)=>{
-      const ar=a.getBoundingClientRect(),br=b.getBoundingClientRect();
-      return (ar.left-br.left)||(ar.top-br.top);
-    })[0]||null;
-  }
-  async function waitForPortalChange(beforeUrl,beforeText,timeout=10000){
-    const started=Date.now();
-    while(Date.now()-started<timeout){
-      await sleep(350);
-      const nowText=text(document.body).slice(0,2500);
-      if(location.href!==beforeUrl||nowText!==beforeText){await sleep(900);return true}
-    }
-    return false;
-  }
   async function expandVisibleData(){
-    const containers=[...document.querySelectorAll('table,[role="grid"],[class*=table i],[class*=pagination i]')];
-    for(let pass=0;pass<20&&!syncCancelled;pass++){
+    const seenPages=new Set();
+    let noChange=0;
+    for(let pass=0;pass<50&&!syncCancelled;pass++){
+      const grids=[...document.querySelectorAll('table,[role="grid"]')].filter(el=>!el.closest('[role="dialog"],.carousel,.wizard,#'+OVERLAY_ID));
+      const fingerprint=grids.map(g=>text(g).slice(0,4000)).join('|');
+      if(seenPages.has(fingerprint)){noChange++;if(noChange>=2)break}else{seenPages.add(fingerprint);noChange=0}
       let btn=null;
-      for(const c of containers){
-        const found=[...c.querySelectorAll('button,a,[role="button"]')].find(el=>/^(load more|view more|show more|next|›|>)$/i.test(text(el))&&!el.disabled&&el.getBoundingClientRect().height>0&&el.getAttribute('aria-disabled')!=='true');
-        if(found){btn=found;break}
+      for(const grid of grids){
+        const scopes=[grid.closest('[class*=table i]')||grid.parentElement,grid.closest('[class*=pagination i]')].filter(Boolean);
+        for(const scope of scopes){
+          const candidates=[...scope.querySelectorAll('button,a,[role="button"]')].filter(el=>{
+            if(el.closest('[role="dialog"],.carousel,.wizard,#'+OVERLAY_ID))return false;
+            const aria=(el.getAttribute('aria-label')||'').toLowerCase(),t=text(el).toLowerCase();
+            const paginationHint=/next page|go to next|pagination/.test(aria)||/^(next|›|>)$/.test(t)||/load more|view more|show more/.test(t);
+            return paginationHint&&!el.disabled&&el.getAttribute('aria-disabled')!=='true'&&el.getBoundingClientRect().height>0;
+          });
+          if(candidates.length){btn=candidates[0];break}
+        }
+        if(btn)break;
       }
       if(!btn)break;
-      const before=text(document.body).slice(0,5000);btn.click();await waitForPortalChange(location.href,before,8000);sendLiveData(document.querySelector('#'+OVERLAY_ID+' iframe'),{paginationPass:pass+1});
+      const beforeUrl=location.href,beforeRows=grids.reduce((n,g)=>n+g.querySelectorAll('tbody tr,[role="row"]').length,0),beforeText=fingerprint;
+      btn.click();
+      let changed=false;
+      for(let retry=0;retry<20&&!syncCancelled;retry++){
+        await sleep(400);
+        const current=[...document.querySelectorAll('table,[role="grid"]')].filter(el=>!el.closest('[role="dialog"],#'+OVERLAY_ID));
+        const rowCount=current.reduce((n,g)=>n+g.querySelectorAll('tbody tr,[role="row"]').length,0),currentText=current.map(g=>text(g).slice(0,4000)).join('|');
+        if(location.href!==beforeUrl||rowCount!==beforeRows||currentText!==beforeText){changed=true;break}
+      }
+      if(!changed)break;
+      sendLiveData(document.querySelector('#'+OVERLAY_ID+' iframe'),{paginationPass:pass+1,pageCount:seenPages.size,coverage:'current-page-partial'});
     }
   }
   async function autoSyncAll(frame){
-    if(window.__DC_FK_AUTO_SYNCING__)return;window.__DC_FK_AUTO_SYNCING__=true;syncCancelled=false;const generation=++syncGeneration;
+    if(window.__DC_FK_AUTO_SYNCING__)return;window.__DC_FK_AUTO_SYNCING__=true;syncCancelled=false;capturePaused=false;activeSyncJobId=crypto.randomUUID();const generation=++syncGeneration;
     try{
       frame?.contentWindow?.postMessage({source:'DC_FK_HOST',type:'SYNC_PROGRESS',payload:{state:'start',total:1},token:channelToken},'*');
       frame?.contentWindow?.postMessage({source:'DC_FK_HOST',type:'SYNC_PROGRESS',payload:{state:'loading',label:'Current Flipkart page',index:1,total:1},token:channelToken},'*');
@@ -154,8 +159,8 @@
   function mountLauncher(){if(document.getElementById(LAUNCHER_ID)||!document.body)return;const b=document.createElement('button');b.id=LAUNCHER_ID;b.type='button';b.title='Flipkart Analytics';b.innerHTML='<span class="dc-tooltip">Open Flipkart Analytics</span><svg viewBox="0 0 32 32" fill="none"><path d="M7 25V14M14 25V8M21 25V17M27 25V5" stroke="#fff" stroke-width="2.4" stroke-linecap="round"/><path d="M4.5 25.5H28" stroke="#fff" stroke-width="2.2" stroke-linecap="round"/></svg>';b.onclick=openDashboard;document.body.append(b)}
   function mountDock(){if(document.getElementById(DOCK_ID)||!document.body)return;const d=document.createElement('div');d.id=DOCK_ID;d.innerHTML='<button class="dc-dock-collapse">«</button><button class="dc-dock-main"><span class="dc-dock-logo">F</span><span><b>Seller Lens</b><small>by Flipkart</small></span></button><button class="dc-dock-off">Turn Off</button><button class="dc-dock-play">▶</button>';d.querySelector('.dc-dock-main').onclick=openDashboard;d.querySelector('.dc-dock-play').onclick=openDashboard;d.querySelector('.dc-dock-off').onclick=()=>{d.style.display='none';document.getElementById(LAUNCHER_ID).style.display='grid'};d.querySelector('.dc-dock-collapse').onclick=()=>d.classList.toggle('dc-collapsed');document.body.append(d)}
   chrome.runtime.onMessage.addListener(m=>{if(m?.type==='OPEN_FLIPKART_ANALYTICS'){openDashboard();return Promise.resolve({ok:true})}});
-  window.addEventListener('message',e=>{if(e.source!==window||e.data?.source!=='DC_FK_PAGE')return;if(e.data.type==='BRIDGE_READY'){bridgeToken=e.data.token||'';requestNetworkBuffer();return}if(!bridgeToken||e.data.token!==bridgeToken)return;if(e.data.type==='NETWORK_DATA'){if(Date.now()<capturePausedUntil)return;networkPayloads.push({url:e.data.url,data:e.data.data,kind:e.data.kind,at:Date.now()});if(networkPayloads.length>80)networkPayloads.shift()}if(e.data.type==='NETWORK_BUFFER'){networkPayloads=e.data.items||networkPayloads;}});
-  window.addEventListener('message',e=>{const frame=document.querySelector('#'+OVERLAY_ID+' iframe');if(e.source!==frame?.contentWindow||e.data?.source!=='DC_FK_DASHBOARD'||e.data?.token!==channelToken)return;document.querySelector('#'+OVERLAY_ID+' iframe');if(e.data?.type==='REQUEST_LIVE_DATA')sendLiveData(frame);if(e.data?.type==='AUTO_SYNC_ALL')autoSyncAll(frame);if(e.data?.type==='CANCEL_AUTO_SYNC'){syncCancelled=true;syncGeneration++}if(e.data?.type==='CLEAR_CAPTURE_BUFFER'){capturePausedUntil=Date.now()+5000;networkPayloads=[];window.postMessage({source:'DC_FK_CONTENT',type:'CLEAR_NETWORK_BUFFER',token:bridgeToken},'*')}});
+  window.addEventListener('message',e=>{if(e.source!==window||e.data?.source!=='DC_FK_PAGE')return;if(e.data.type==='BRIDGE_READY'){bridgeToken=e.data.token||'';requestNetworkBuffer();return}if(!bridgeToken||e.data.token!==bridgeToken)return;if(e.data.type==='NETWORK_DATA'){if(capturePaused||Date.now()<capturePausedUntil||Number(e.data.captureGeneration||captureGeneration)<captureGeneration)return;networkPayloads.push({url:e.data.url,data:e.data.data,kind:e.data.kind,at:Number(e.data.at||Date.now()),captureGeneration:Number(e.data.captureGeneration||captureGeneration)});if(networkPayloads.length>80)networkPayloads.shift()}if(e.data.type==='NETWORK_BUFFER'){networkPayloads=(e.data.items||[]).filter(x=>Number(x.captureGeneration||0)>=captureGeneration&&Number(x.at||Date.now())>clearTimestamp);}});
+  window.addEventListener('message',e=>{const frame=document.querySelector('#'+OVERLAY_ID+' iframe');if(e.source!==frame?.contentWindow||e.data?.source!=='DC_FK_DASHBOARD'||e.data?.token!==channelToken)return;if(e.data?.type==='REQUEST_LIVE_DATA')sendLiveData(frame);if(e.data?.type==='AUTO_SYNC_ALL')autoSyncAll(frame);if(e.data?.type==='CANCEL_AUTO_SYNC'){syncCancelled=true;syncGeneration++}if(e.data?.type==='CLEAR_CAPTURE_BUFFER'){capturePausedUntil=Date.now()+5000;networkPayloads=[];window.postMessage({source:'DC_FK_CONTENT',type:'CLEAR_NETWORK_BUFFER',token:bridgeToken},'*')}if(e.data?.type==='CLEAR_DATA_GENERATION'){captureGeneration=Math.max(captureGeneration+1,Number(e.data.payload?.generation||0));clearTimestamp=Number(e.data.payload?.clearTimestamp||Date.now());capturePaused=true;activeSyncJobId=null;syncCancelled=true;syncGeneration++;networkPayloads=[];window.__DC_FK_AUTO_SYNCING__=false;window.postMessage({source:'DC_FK_CONTENT',type:'SET_CAPTURE_GENERATION',generation:captureGeneration,clearTimestamp,token:bridgeToken},'*');window.postMessage({source:'DC_FK_CONTENT',type:'CLEAR_NETWORK_BUFFER',token:bridgeToken},'*')}if(e.data?.type==='RESUME_CAPTURE'){captureGeneration=Math.max(captureGeneration,Number(e.data.payload?.generation||captureGeneration));capturePaused=false;activeSyncJobId=e.data.payload?.syncJobId||crypto.randomUUID();clearTimestamp=Date.now();window.postMessage({source:'DC_FK_CONTENT',type:'SET_CAPTURE_GENERATION',generation:captureGeneration,clearTimestamp,token:bridgeToken},'*');}});
   const mount=()=>{mountLauncher();mountDock();requestNetworkBuffer()};
   setInterval(()=>{const f=document.querySelector('#'+OVERLAY_ID+' iframe');if(f)sendLiveData(f)},15000);
   document.readyState==='loading'?document.addEventListener('DOMContentLoaded',mount,{once:true}):mount();

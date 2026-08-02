@@ -10,6 +10,10 @@
   let lastChangeAt = Date.now();
 
   const frame = () => document.querySelector(`#${OVERLAY_ID} iframe`);
+  function extensionContextAvailable() {
+    try { return Boolean(globalThis.chrome?.runtime?.id && chrome.storage?.local); }
+    catch { return false; }
+  }
   const validUrl = value => {
     try {
       const url = new URL(value, location.href);
@@ -19,6 +23,7 @@
   const sameUrl = (a, b) => validUrl(a) === validUrl(b);
 
   async function persist(completed = null) {
+    if (!extensionContextAvailable()) { stopTimer(); return; }
     try {
       if (state) sessionStorage.setItem(STATE_KEY, JSON.stringify(state));
       else sessionStorage.removeItem(STATE_KEY);
@@ -50,6 +55,12 @@
   }
 
   function heartbeat() {
+    if (!extensionContextAvailable()) {
+      stopTimer();
+      state = null;
+      try { sessionStorage.removeItem(STATE_KEY); } catch {}
+      return;
+    }
     if (!state?.active) return;
     const now = Date.now();
     const current = fingerprint();
@@ -72,11 +83,12 @@
 
   function startTimer() {
     stopTimer();
+    if (!extensionContextAvailable()) return;
     heartbeatTimer = setInterval(heartbeat, 5000);
   }
 
   function begin() {
-    if (state?.active) return;
+    if (!extensionContextAvailable() || state?.active) return;
     state = {
       active: true,
       id: crypto.randomUUID(),
@@ -117,10 +129,21 @@
     if (!trustedDashboardMessage(event)) return;
     const type = event.data?.type;
     if (type === 'AUTO_SYNC_ALL') begin();
-    if (['AUTO_SYNC_DONE','SYNC_DONE','AUTO_SYNC_COMPLETE'].includes(type)) finish('completed', true);
-    if (['AUTO_SYNC_ERROR','SYNC_ERROR'].includes(type)) finish('error', true);
     if (type === 'CANCEL_AUTO_SYNC') finish('cancelled', true);
   }, true);
+
+  window.addEventListener('dc-fk-sync-lifecycle', event => {
+    const lifecycle = event.detail?.state;
+    if (lifecycle === 'done') finish('completed', true);
+    else if (lifecycle === 'error') finish('error', true);
+    else if (lifecycle === 'cancelled') finish('cancelled', true);
+  });
+
+  window.addEventListener('dc-extension-context-invalid', () => {
+    stopTimer();
+    state = null;
+    try { sessionStorage.removeItem(STATE_KEY); } catch {}
+  });
 
   const push = history.pushState.bind(history);
   history.pushState = function(...args) { const result = push(...args); queueMicrotask(markNavigation); return result; };
@@ -132,7 +155,7 @@
 
   try {
     const recovered = JSON.parse(sessionStorage.getItem(STATE_KEY) || 'null');
-    if (recovered?.active) {
+    if (recovered?.active && extensionContextAvailable()) {
       state = recovered;
       if (Date.now() - Number(state.startedAt || 0) >= MAX_SYNC_MS) finish('expired', true);
       else { lastFingerprint = fingerprint(); lastChangeAt = Date.now(); startTimer(); markNavigation(); }

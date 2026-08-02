@@ -138,4 +138,9 @@
   clearModesScript.src = chrome.runtime.getURL('v341-clear-modes.js');
   clearModesScript.dataset.runtime = 'v341-clear-modes';
   (document.head || document.documentElement).appendChild(clearModesScript);
+
+  const inventoryParserScript = document.createElement('script');
+  inventoryParserScript.src = chrome.runtime.getURL('v341-inventory-parser.js');
+  inventoryParserScript.dataset.runtime = 'v341-inventory-parser';
+  (document.head || document.documentElement).appendChild(inventoryParserScript);
 })();

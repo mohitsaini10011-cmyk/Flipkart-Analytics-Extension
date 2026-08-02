@@ -1,3 +1,4 @@
+# Triggered for v3.4.7 runtime critical fixes
 name: Apply v3.4.7 runtime fixes
 
 on:
@@ -24,7 +25,7 @@ jobs:
         run: |
           python3 - <<'PY'
           from pathlib import Path
-          import json, re
+          import json
 
           p = Path('content.js')
           s = p.read_text()
@@ -69,7 +70,6 @@ jobs:
           if old_listener not in s:
               raise SystemExit('runtime listener source pattern not found')
           s = s.replace(old_listener, new_listener)
-
           p.write_text(s)
 
           p = Path('v343-sync-controller.js')
@@ -107,9 +107,7 @@ jobs:
           m = json.loads(p.read_text())
           m['version'] = '3.4.7'
           m['name'] = 'Ecom Insight v3.4.7'
-          scripts = m['content_scripts'][1]['js']
-          desired = ['v346-context-guard.js','v341-pagination-guard.js','content.js','v343-sync-controller.js']
-          m['content_scripts'][1]['js'] = desired
+          m['content_scripts'][1]['js'] = ['v346-context-guard.js','v341-pagination-guard.js','content.js','v343-sync-controller.js']
           p.write_text(json.dumps(m, indent=2) + '\n')
 
           report = """Ecom Insight v3.4.7 Validation Report

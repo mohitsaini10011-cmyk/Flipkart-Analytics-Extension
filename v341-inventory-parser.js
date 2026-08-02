@@ -1,14 +1,15 @@
 'use strict';
 (() => {
   const text = value => String(value ?? '').trim();
+  const upper = value => text(value).toUpperCase();
+  const own = (object, key) => Boolean(object && Object.prototype.hasOwnProperty.call(object, key));
+  const isObject = value => Boolean(value && typeof value === 'object' && !Array.isArray(value));
   const numberValue = value => {
     if (typeof value === 'number') return Number.isFinite(value) ? value : null;
     if (value === null || value === undefined || text(value) === '') return null;
     const parsed = Number(text(value).replace(/[₹,%\s,]/g, '').replace(/\((.*?)\)/, '-$1'));
     return Number.isFinite(parsed) ? parsed : null;
   };
-  const upper = value => text(value).toUpperCase();
-  const own = (object, key) => Boolean(object && Object.prototype.hasOwnProperty.call(object, key));
 
   const aliases = {
     sku: ['sellerSku', 'seller_sku', 'sku', 'skuId', 'sellerSkuId'],
@@ -28,78 +29,125 @@
     updatedAt: ['updatedAt', 'updated_at', 'lastUpdated', 'last_updated', 'modifiedAt', 'modified_at']
   };
 
-  function flatten(object, prefix = '', output = {}, depth = 0) {
-    if (!object || typeof object !== 'object' || depth > 5) return output;
-    for (const [key, value] of Object.entries(object)) {
-      const path = prefix ? `${prefix}.${key}` : key;
-      if (value && typeof value === 'object' && !Array.isArray(value)) flatten(value, path, output, depth + 1);
-      else if (!Array.isArray(value)) {
-        output[path] = value;
-        if (!own(output, key)) output[key] = value;
+  const approvedNestedContainers = new Set([
+    'inventory', 'stock', 'availability', 'quantity', 'quantities', 'listing', 'product',
+    'pricing', 'price', 'warehouse', 'location', 'seller', 'metadata', 'attributes'
+  ]);
+
+  function directPick(record, keys) {
+    for (const key of keys) {
+      if (own(record, key) && record[key] !== null && record[key] !== undefined && text(record[key]) !== '') {
+        return { value: record[key], path: key };
       }
     }
-    return output;
-  }
-
-  function pick(flat, keys) {
-    for (const key of keys) {
-      if (own(flat, key) && flat[key] !== null && flat[key] !== undefined && text(flat[key]) !== '') return flat[key];
-      const suffix = `.${key}`.toLowerCase();
-      const match = Object.keys(flat).find(path => path.toLowerCase().endsWith(suffix));
-      if (match && text(flat[match]) !== '') return flat[match];
+    for (const [containerKey, container] of Object.entries(record)) {
+      if (!approvedNestedContainers.has(containerKey.toLowerCase()) || !isObject(container)) continue;
+      for (const key of keys) {
+        if (own(container, key) && container[key] !== null && container[key] !== undefined && text(container[key]) !== '') {
+          return { value: container[key], path: `${containerKey}.${key}` };
+        }
+      }
     }
-    return null;
+    return { value: null, path: null };
   }
 
-  function classifyEndpoint(url = '') {
+  function schemaHints(record) {
+    if (!isObject(record)) return { sku: false, identity: false, quantity: false, warehouse: false };
+    const sku = directPick(record, aliases.sku).value !== null;
+    const identity = directPick(record, aliases.listingId).value !== null || directPick(record, aliases.fsn).value !== null;
+    const quantity = directPick(record, aliases.availableQty).value !== null;
+    const warehouse = directPick(record, aliases.warehouse).value !== null;
+    return { sku, identity, quantity, warehouse };
+  }
+
+  function isRecordObject(record) {
+    const hints = schemaHints(record);
+    return hints.sku && hints.identity && hints.quantity;
+  }
+
+  function classifyEndpoint(url = '', schemaVerified = false) {
     const value = text(url).toLowerCase();
     if (/inventory|stock|availability/.test(value)) return { source: 'Inventory API', confidence: 98 };
     if (/listing/.test(value)) return { source: 'Listings API', confidence: 94 };
     if (/catalog|product/.test(value)) return { source: 'Catalog API', confidence: 88 };
-    return { source: 'Network JSON', confidence: 80 };
+    return schemaVerified ? { source: 'Schema-verified Network JSON', confidence: 90 } : { source: 'Network JSON', confidence: 72 };
   }
 
-  function walk(value, visitor, depth = 0) {
-    if (depth > 9 || value === null || value === undefined) return;
+  function collectRecordNodes(value, path = '$', output = [], seen = new WeakSet(), depth = 0) {
+    if (depth > 10 || value === null || value === undefined) return output;
     if (Array.isArray(value)) {
-      for (const item of value) walk(item, visitor, depth + 1);
-      return;
+      value.forEach((item, index) => {
+        if (isRecordObject(item)) output.push({ record: item, path: `${path}[${index}]` });
+        else collectRecordNodes(item, `${path}[${index}]`, output, seen, depth + 1);
+      });
+      return output;
     }
-    if (typeof value !== 'object') return;
-    visitor(value);
-    for (const child of Object.values(value)) if (child && typeof child === 'object') walk(child, visitor, depth + 1);
+    if (!isObject(value) || seen.has(value)) return output;
+    seen.add(value);
+    if (isRecordObject(value)) {
+      output.push({ record: value, path });
+      return output;
+    }
+    for (const [key, child] of Object.entries(value)) {
+      if (child && typeof child === 'object') collectRecordNodes(child, `${path}.${key}`, output, seen, depth + 1);
+    }
+    return output;
   }
 
-  function parseCandidate(raw, endpoint) {
-    const flat = flatten(raw);
-    const sku = upper(pick(flat, aliases.sku));
-    const listingId = text(pick(flat, aliases.listingId));
-    const fsn = text(pick(flat, aliases.fsn));
-    const availableQty = numberValue(pick(flat, aliases.availableQty));
+  function parseCandidate(raw, endpoint, recordPath) {
+    const skuField = directPick(raw, aliases.sku);
+    const listingField = directPick(raw, aliases.listingId);
+    const fsnField = directPick(raw, aliases.fsn);
+    const qtyField = directPick(raw, aliases.availableQty);
+    const sku = upper(skuField.value);
+    const listingId = text(listingField.value);
+    const fsn = text(fsnField.value);
+    const availableQty = numberValue(qtyField.value);
     if (!sku || (!listingId && !fsn) || availableQty === null) return null;
     if (sku.length < 2 || sku.length > 160 || /^(UNKNOWN|NA|N\/A|NULL)$/.test(sku)) return null;
-    const warehouse = text(pick(flat, aliases.warehouse));
+
+    const warehouseField = directPick(raw, aliases.warehouse);
+    const titleField = directPick(raw, aliases.title);
+    const brandField = directPick(raw, aliases.brand);
+    const categoryField = directPick(raw, aliases.category);
+    const reservedField = directPick(raw, aliases.reservedQty);
+    const blockedField = directPick(raw, aliases.blockedQty);
+    const variantField = directPick(raw, aliases.variantId);
+    const statusField = directPick(raw, aliases.status);
+    const sellingField = directPick(raw, aliases.sellingPrice);
+    const mrpField = directPick(raw, aliases.mrp);
+    const updatedField = directPick(raw, aliases.updatedAt);
+    const warehouse = text(warehouseField.value);
+
     return {
       listingId,
       sku,
       fsn,
-      title: text(pick(flat, aliases.title)) || sku,
-      brand: text(pick(flat, aliases.brand)),
-      category: text(pick(flat, aliases.category)),
+      title: text(titleField.value) || sku,
+      brand: text(brandField.value),
+      category: text(categoryField.value),
       stock: Math.max(0, availableQty),
       availableQty: Math.max(0, availableQty),
-      reservedQty: Math.max(0, numberValue(pick(flat, aliases.reservedQty)) ?? 0),
-      blockedQty: Math.max(0, numberValue(pick(flat, aliases.blockedQty)) ?? 0),
+      reservedQty: Math.max(0, numberValue(reservedField.value) ?? 0),
+      blockedQty: Math.max(0, numberValue(blockedField.value) ?? 0),
       warehouse,
       warehouseId: warehouse,
-      variantId: text(pick(flat, aliases.variantId)),
-      status: text(pick(flat, aliases.status)) || 'Listing',
-      sale: numberValue(pick(flat, aliases.sellingPrice)) ?? 0,
-      mrp: numberValue(pick(flat, aliases.mrp)) ?? 0,
-      updatedAt: text(pick(flat, aliases.updatedAt)) || new Date().toISOString(),
+      variantId: text(variantField.value),
+      status: text(statusField.value) || 'Listing',
+      sale: numberValue(sellingField.value) ?? 0,
+      mrp: numberValue(mrpField.value) ?? 0,
+      updatedAt: text(updatedField.value) || new Date().toISOString(),
       source: endpoint.source,
       confidence: endpoint.confidence,
-      apiVerified: true
+      apiVerified: true,
+      recordPath,
+      fieldProvenance: {
+        sku: skuField.path,
+        listingId: listingField.path,
+        fsn: fsnField.path,
+        availableQty: qtyField.path,
+        warehouse: warehouseField.path
+      }
     };
   }
 
@@ -107,23 +155,39 @@
     return [text(row.listingId || row.fsn), upper(row.sku), text(row.warehouseId || row.warehouse), text(row.variantId)].join('|');
   }
 
+  function responseFingerprint(response, index) {
+    return `${text(response?.url)}|${Number(response?.at || 0)}|${index}`;
+  }
+
   function parseNetwork(network = []) {
     const records = [];
-    let rejected = 0;
-    for (const response of network) {
-      const endpoint = classifyEndpoint(response?.url);
-      if (!/inventory|stock|availability|listing|catalog|product/i.test(text(response?.url))) continue;
-      walk(response?.data, object => {
-        const candidate = parseCandidate(object, endpoint);
-        if (candidate) records.push(candidate);
-        else {
-          const flat = flatten(object);
-          const hasInventoryHint = aliases.sku.some(key => own(flat, key)) || aliases.availableQty.some(key => own(flat, key));
-          if (hasInventoryHint) rejected++;
+    const acceptedPaths = new Set();
+    const rejectedPaths = new Set();
+    const candidateFingerprints = new Set();
+
+    network.forEach((response, responseIndex) => {
+      const nodes = collectRecordNodes(response?.data);
+      const schemaVerified = nodes.length > 0;
+      const endpoint = classifyEndpoint(response?.url, schemaVerified);
+      if (!schemaVerified && !/inventory|stock|availability|listing|catalog|product/i.test(text(response?.url))) return;
+      const base = responseFingerprint(response, responseIndex);
+      for (const node of nodes) {
+        const pathKey = `${base}|${node.path}`;
+        if (acceptedPaths.has(pathKey) || rejectedPaths.has(pathKey)) continue;
+        const candidate = parseCandidate(node.record, endpoint, node.path);
+        if (!candidate) {
+          rejectedPaths.add(pathKey);
+          continue;
         }
-      });
-    }
-    return { records, rejected };
+        const fingerprint = `${base}|${stableKey(candidate)}|${node.path}`;
+        if (candidateFingerprints.has(fingerprint)) continue;
+        candidateFingerprints.add(fingerprint);
+        acceptedPaths.add(pathKey);
+        records.push(candidate);
+      }
+    });
+
+    return { records, rejected: rejectedPaths.size };
   }
 
   function domFallback(listings = []) {
@@ -144,18 +208,18 @@
 
   function mergeInventory(existing = [], apiRecords = [], domRecords = []) {
     const map = new Map();
-    let duplicates = 0;
+    const duplicateKeys = new Set();
     const add = record => {
       const key = stableKey(record);
       if (!key.replaceAll('|', '')) return;
       const previous = map.get(key);
-      if (previous) duplicates++;
+      if (previous) duplicateKeys.add(key);
       if (!previous || Number(record.confidence || 0) >= Number(previous.confidence || 0)) map.set(key, { ...previous, ...record });
     };
     existing.forEach(add);
     domRecords.forEach(add);
     apiRecords.forEach(add);
-    return { rows: [...map.values()], duplicates };
+    return { rows: [...map.values()], duplicates: duplicateKeys.size };
   }
 
   function ensureCoveragePanel() {
@@ -166,8 +230,7 @@
       panel = document.createElement('article');
       panel.id = 'inventoryCoveragePanel';
       panel.className = 'panel';
-      const kpis = document.getElementById('inventoryKpis');
-      kpis?.insertAdjacentElement('afterend', panel);
+      document.getElementById('inventoryKpis')?.insertAdjacentElement('afterend', panel);
     }
     return panel;
   }
@@ -203,7 +266,7 @@
         if (typeof render === 'function') render();
         if (typeof updateConnectionUI === 'function') updateConnectionUI();
       } catch (error) {
-        console.warn('[Flipkart Analytics] Structured inventory parser failed:', error);
+        console.warn('[Flipkart Analytics] Schema-safe inventory parser failed:', error);
       }
     });
   });

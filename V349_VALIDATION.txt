@@ -1,0 +1,30 @@
+Ecom Insight v3.4.9 Validation Report
+
+SOURCE-LEVEL PASS
+- All v3.4.8 guards and restoration fixes remain present.
+- Diagnostics writes are serialized through a single promise queue.
+- sync-started, sync-finished, sync-navigation, sync-stall and restore-issued events carry syncId.
+- Runtime report validates restoration per sync instead of comparing global totals.
+- No sync can pass if it has more than one restore.
+- Every finished sync that requires restoration must have exactly one restore.
+- Finished syncs that do not require restoration must have zero restores.
+- Public dc-fk-test-timeout hook has been removed from production code.
+- Stale-context evidence is stored in sessionStorage when extension storage is unavailable and migrated after a valid reload.
+- Console errors are classified as extension, seller-page or unknown.
+- background.js sends source: toolbar explicitly.
+- Full-page diagnostics MutationObserver has been removed.
+- Dashboard open/close diagnostics use direct launcher/runtime/click/keyboard events.
+- Manifest version is 3.4.9.
+- Existing context guard, single restore owner, cancellation sequencing, heartbeat cleanup, branding, icons and cropper removal remain intact.
+
+RUNTIME TEST PROCEDURE
+1. Keep Seller Hub open and reload the extension. Click the old launcher. Expected: reload notice and stale-context evidence after the tab is refreshed.
+2. Open Ecom Insight from the page launcher. Expected source: page-launcher.
+3. Open from the Chrome toolbar. Expected source: toolbar.
+4. Run full sync. Expected one sync-started and one sync-finished with the same syncId.
+5. Cancel midway. Expected cancel-requested, cancelled finish and at most one restore-issued for that syncId.
+6. Let a real sync reach timeout. Expected timeout finish and exactly one restore only when requiresRestore is true.
+7. Request dc-fk-runtime-report. Expected exactlyOneRestorePerRequiredSync = true and extensionErrorCount = 0.
+
+IMPORTANT
+This report validates source wiring. Authenticated Flipkart Seller Hub runtime behavior still requires execution in Chrome.

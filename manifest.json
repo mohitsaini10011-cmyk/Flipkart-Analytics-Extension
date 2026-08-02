@@ -1,8 +1,8 @@
 {
   "manifest_version": 3,
-  "name": "Flipkart Analytics & Tools v3.4",
-  "version": "3.4",
-  "description": "Flipkart analytics with local PDF crop engine, stable reconciliation, seller isolation and safer current-page sync.",
+  "name": "Flipkart Analytics & Tools v3.4.1",
+  "version": "3.4.1",
+  "description": "Flipkart seller analytics with full-account sync, structured inventory parsing, safer reconciliation, local PDF cropping and seller-isolated backups.",
   "permissions": [
     "storage",
     "downloads",
@@ -69,7 +69,9 @@
         "pdf-lib.min.js",
         "v34-core.js",
         "v341-migration-integrity.js",
-        "v341-clear-modes.js"
+        "v341-clear-modes.js",
+        "v341-backup-schema.js",
+        "v341-inventory-parser.js"
       ],
       "matches": [
         "https://seller.flipkart.com/*",

@@ -43,6 +43,7 @@
         "https://*.seller.flipkart.com/*"
       ],
       "js": [
+        "v341-pagination-guard.js",
         "content.js"
       ],
       "css": [
@@ -66,7 +67,9 @@
         "icons/*",
         "page-bridge.js",
         "pdf-lib.min.js",
-        "v34-core.js"
+        "v34-core.js",
+        "v341-migration-integrity.js",
+        "v341-clear-modes.js"
       ],
       "matches": [
         "https://seller.flipkart.com/*",

@@ -1,0 +1,71 @@
+name: v3.4.5 source cleanup
+on:
+  push:
+    paths:
+      - '.github/workflows/v345-source-cleanup.yml'
+permissions:
+  contents: write
+jobs:
+  cleanup:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - name: Remove cropper source from app.js
+        run: |
+          python - <<'PY'
+          from pathlib import Path
+          p = Path('app.js')
+          s = p.read_text(encoding='utf-8')
+          marker = '// Label Cropper'
+          if marker in s:
+              s = s.split(marker, 1)[0].rstrip() + '\n'
+              p.write_text(s, encoding='utf-8')
+          forbidden = ['PDFLib', 'cropPdfInput', 'cropProcessBtn', 'robustCropPdf']
+          found = [x for x in forbidden if x in p.read_text(encoding='utf-8')]
+          if found:
+              raise SystemExit(f'Cropper references remain in app.js: {found}')
+          PY
+      - name: JavaScript syntax validation
+        run: |
+          set -e
+          for file in *.js; do node --check "$file"; done
+      - name: Validate dashboard and manifest cleanup
+        run: |
+          python - <<'PY'
+          import json
+          from pathlib import Path
+          html = Path('dashboard.html').read_text(encoding='utf-8')
+          manifest = json.loads(Path('manifest.json').read_text(encoding='utf-8'))
+          forbidden = ['id="crop"', 'data-page="crop"', 'pdf-lib.min.js', 'v344-remove-crop.js', 'v343-logo.js', 'v343-production-hardening.js']
+          bad = [x for x in forbidden if x in html or x in json.dumps(manifest)]
+          if bad:
+              raise SystemExit(f'Obsolete crop/runtime references remain: {bad}')
+          required_ids = ['overview','orders','analytics','profit','settlements','returns','inventory','tools','costs','developer','settings','mappingView','syncBtn','fileInput']
+          missing = [x for x in required_ids if f'id="{x}"' not in html]
+          if missing:
+              raise SystemExit(f'Missing dashboard IDs: {missing}')
+          PY
+      - name: Verify PNG icon dimensions
+        run: |
+          python - <<'PY'
+          import struct
+          from pathlib import Path
+          expected = {16: 'icons/icon16.png', 32: 'icons/icon32.png', 48: 'icons/icon48.png', 128: 'icons/icon128.png'}
+          lines = []
+          for size, path in expected.items():
+              data = Path(path).read_bytes()
+              if data[:8] != b'\x89PNG\r\n\x1a\n':
+                  raise SystemExit(f'{path} is not PNG')
+              width, height = struct.unpack('>II', data[16:24])
+              if (width, height) != (size, size):
+                  raise SystemExit(f'{path}: expected {size}x{size}, got {width}x{height}')
+              lines.append(f'PASS {path}: {width}x{height}')
+          Path('V345_VALIDATION.txt').write_text('\n'.join(lines) + '\nPASS JavaScript syntax\nPASS dashboard required IDs\nPASS cropper source cleanup\n', encoding='utf-8')
+          PY
+      - name: Commit cleanup and validation result
+        run: |
+          git config user.name 'Ecom Insight Build Bot'
+          git config user.email 'actions@users.noreply.github.com'
+          git add app.js V345_VALIDATION.txt
+          git commit -m 'Remove cropper code and validate v3.4.5 build' || exit 0
+          git push

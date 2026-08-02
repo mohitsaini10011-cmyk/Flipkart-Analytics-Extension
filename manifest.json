@@ -80,7 +80,8 @@
         "v341-payments-parser.js",
         "v341-settlements-parser.js",
         "v341-xlsx-importer.js",
-        "v343-production-hardening.js"
+        "v343-production-hardening.js",
+        "v343-logo.js"
       ],
       "matches": [
         "https://seller.flipkart.com/*",

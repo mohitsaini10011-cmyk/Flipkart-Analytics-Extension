@@ -5,66 +5,32 @@
   async function pauseCaptureForClear() {
     const stored = await chrome.storage.local.get(CAPTURE_KEY);
     const current = stored[CAPTURE_KEY] || {};
-    const control = {
-      generation: Math.max(1, Number(current.generation) || 1) + 1,
-      paused: true,
-      clearTimestamp: Date.now(),
-      activeSyncJobId: null
-    };
+    const control = { generation: Math.max(1, Number(current.generation) || 1) + 1, paused: true, clearTimestamp: Date.now(), activeSyncJobId: null };
     await chrome.storage.local.set({ [CAPTURE_KEY]: control });
-    try {
-      window.parent.postMessage({ source: 'DC_FK_DASHBOARD', type: 'CLEAR_DATA_GENERATION', payload: { generation: control.generation, clearTimestamp: control.clearTimestamp }, token: CHANNEL_TOKEN }, '*');
-    } catch {}
+    try { window.parent.postMessage({ source: 'DC_FK_DASHBOARD', type: 'CLEAR_DATA_GENERATION', payload: { generation: control.generation, clearTimestamp: control.clearTimestamp }, token: CHANNEL_TOKEN }, '*'); } catch {}
     return control;
   }
 
   function resetArrays(mode) {
     if (mode === 'orders') { rows = []; return; }
     if (mode === 'orders_returns') { rows = []; unmatchedReturns = []; return; }
-    if (mode === 'orders_financial') {
-      rows = []; financialLedger = []; unmatchedFinancials = [];
-      if (typeof manualReviewFinancials !== 'undefined') manualReviewFinancials = [];
-      return;
-    }
-    if (mode === 'all') {
-      rows = []; inventoryRows = []; financialLedger = []; unmatchedReturns = []; unmatchedFinancials = [];
-      if (typeof manualReviewFinancials !== 'undefined') manualReviewFinancials = [];
-      syncHistory = []; lastLiveSync = null; skuCosts = {};
-    }
+    if (mode === 'orders_financial') { rows = []; financialLedger = []; unmatchedFinancials = []; if (typeof manualReviewFinancials !== 'undefined') manualReviewFinancials = []; return; }
+    if (mode === 'all') { rows = []; inventoryRows = []; financialLedger = []; unmatchedReturns = []; unmatchedFinancials = []; if (typeof manualReviewFinancials !== 'undefined') manualReviewFinancials = []; syncHistory = []; lastLiveSync = null; skuCosts = {}; }
   }
 
   async function runClear(mode, label) {
-    const warning = mode === 'orders'
-      ? 'Orders clear honge. Existing returns aur financial ledger preserve rahenge.'
-      : mode === 'orders_returns'
-        ? 'Orders aur return/RTO records clear honge. Financial ledger preserve rahega.'
-        : mode === 'orders_financial'
-          ? 'Orders, settlements, payments aur unmatched financial records clear honge.'
-          : 'Is seller ka orders, returns, inventory, financial ledger, costs aur sync history sab clear hoga.';
+    const warning = mode === 'orders' ? 'Orders clear honge. Existing returns aur financial ledger preserve rahenge.' : mode === 'orders_returns' ? 'Orders aur return/RTO records clear honge. Financial ledger preserve rahega.' : mode === 'orders_financial' ? 'Orders, settlements, payments aur unmatched financial records clear honge.' : 'Is seller ka orders, returns, inventory, financial ledger, costs aur sync history sab clear hoga.';
     if (!confirm(`${label}?\n\n${warning}\n\nCapture Sync Now tak paused rahega.`)) return;
     const buttons = document.querySelectorAll('[data-clear-mode], #resetExtension');
     buttons.forEach(button => { button.disabled = true; });
-    try {
-      await pauseCaptureForClear();
-      resetArrays(mode);
-      if (typeof save === 'function') await save();
-      if (typeof render === 'function') render();
-      if (typeof show === 'function') show(`${label} complete. Sync Now se fresh capture start karein.`);
-    } catch (error) {
-      console.error('Clear mode failed', error);
-      if (typeof show === 'function') show(`Clear failed: ${error?.message || error}`, true);
-    } finally {
-      buttons.forEach(button => { button.disabled = false; });
-    }
+    try { await pauseCaptureForClear(); resetArrays(mode); if (typeof save === 'function') await save(); if (typeof render === 'function') render(); if (typeof show === 'function') show(`${label} complete. Sync Now se fresh capture start karein.`); }
+    catch (error) { console.error('Clear mode failed', error); if (typeof show === 'function') show(`Clear failed: ${error?.message || error}`, true); }
+    finally { buttons.forEach(button => { button.disabled = false; }); }
   }
 
   function makeButton(id, label, mode) {
     const button = document.createElement('button');
-    button.id = id;
-    button.type = 'button';
-    button.className = 'danger';
-    button.dataset.clearMode = mode;
-    button.textContent = label;
+    button.id = id; button.type = 'button'; button.className = 'danger'; button.dataset.clearMode = mode; button.textContent = label;
     button.addEventListener('click', () => runClear(mode, label));
     return button;
   }
@@ -85,9 +51,7 @@
   function loadRuntime(file, runtimeName) {
     if (document.querySelector(`script[data-runtime="${runtimeName}"]`)) return;
     const script = document.createElement('script');
-    script.src = chrome.runtime.getURL(file);
-    script.async = false;
-    script.dataset.runtime = runtimeName;
+    script.src = chrome.runtime.getURL(file); script.async = false; script.dataset.runtime = runtimeName;
     (document.head || document.documentElement).appendChild(script);
   }
 
@@ -100,15 +64,9 @@
     loadRuntime('v341-payments-parser.js', 'v341-payments-parser');
     loadRuntime('v341-settlements-parser.js', 'v341-settlements-parser');
     loadRuntime('v341-xlsx-importer.js', 'v341-xlsx-importer');
-    loadRuntime('v343-production-hardening.js', 'v343-production-hardening');
-    loadRuntime('v343-logo.js', 'v343-logo');
-    loadRuntime('v344-remove-crop.js', 'v344-remove-crop');
+    loadRuntime('v345-runtime.js', 'v345-runtime');
   }
 
-  if (document.readyState === 'loading') {
-    document.addEventListener('DOMContentLoaded', () => { installClearModes(); loadAdditionalRuntimes(); }, { once: true });
-  } else {
-    installClearModes();
-    loadAdditionalRuntimes();
-  }
+  if (document.readyState === 'loading') document.addEventListener('DOMContentLoaded', () => { installClearModes(); loadAdditionalRuntimes(); }, { once: true });
+  else { installClearModes(); loadAdditionalRuntimes(); }
 })();

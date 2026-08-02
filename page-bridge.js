@@ -1,8 +1,8 @@
 (() => {
   if (window.__DC_FK_BRIDGE__) return;
   window.__DC_FK_BRIDGE__ = true;
-  const buffer=[];const token=crypto.randomUUID();const MAX_BYTES=250000;const seen=new Map();
-  const push=(url,data,kind='json')=>{const u=String(url||'');let serial='';try{serial=typeof data==='string'?data:JSON.stringify(data)}catch{return}if(serial.length>MAX_BYTES)return;const key=u+'|'+serial.length+'|'+serial.slice(0,160);if(seen.has(key)&&Date.now()-seen.get(key)<10000)return;seen.set(key,Date.now());buffer.push({url:u,data,kind,at:Date.now()});if(buffer.length>50)buffer.splice(0,buffer.length-50);window.postMessage({source:'DC_FK_PAGE',type:'NETWORK_DATA',url:u,data,kind,token},'*');};
+  const buffer=[];const token=crypto.randomUUID();const MAX_BYTES=250000;const seen=new Map();let captureGeneration=1;let clearTimestamp=0;
+  const push=(url,data,kind='json')=>{const u=String(url||'');let serial='';try{serial=typeof data==='string'?data:JSON.stringify(data)}catch{return}if(serial.length>MAX_BYTES)return;const key=u+'|'+serial.length+'|'+serial.slice(0,160);if(seen.has(key)&&Date.now()-seen.get(key)<10000)return;seen.set(key,Date.now());const capturedAt=Date.now();if(capturedAt<=clearTimestamp)return;buffer.push({url:u,data,kind,at:capturedAt,captureGeneration});if(buffer.length>50)buffer.splice(0,buffer.length-50);window.postMessage({source:'DC_FK_PAGE',type:'NETWORK_DATA',url:u,data,kind,at:capturedAt,captureGeneration,token},'*');};
   const originalFetch=window.fetch;
   window.fetch=async function(...args){
     const res=await originalFetch.apply(this,args);
@@ -25,8 +25,9 @@
   };
   window.addEventListener('message',e=>{
     if(e.source===window&&e.data?.source==='DC_FK_CONTENT'&&e.data?.token===token){
-      if(e.data?.type==='GET_NETWORK_BUFFER')window.postMessage({source:'DC_FK_PAGE',type:'NETWORK_BUFFER',items:buffer.slice(-50),token},'*');
-      if(e.data?.type==='CLEAR_NETWORK_BUFFER'){buffer.length=0;seen.clear();}
+      if(e.data?.type==='GET_NETWORK_BUFFER')window.postMessage({source:'DC_FK_PAGE',type:'NETWORK_BUFFER',items:buffer.filter(x=>Number(x.captureGeneration||0)>=captureGeneration).slice(-50),captureGeneration,token},'*');
+      if(e.data?.type==='SET_CAPTURE_GENERATION'){captureGeneration=Math.max(captureGeneration,Number(e.data.generation||captureGeneration));clearTimestamp=Math.max(clearTimestamp,Number(e.data.clearTimestamp||Date.now()));buffer.length=0;seen.clear();}
+      if(e.data?.type==='CLEAR_NETWORK_BUFFER'){clearTimestamp=Date.now();buffer.length=0;seen.clear();}
     }
   });
   window.postMessage({source:'DC_FK_PAGE',type:'BRIDGE_READY',token},'*');

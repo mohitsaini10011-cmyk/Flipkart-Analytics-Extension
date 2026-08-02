@@ -1,5 +1,7 @@
 'use strict';
 (() => {
+  const BACKUP_SUFFIX = '__migrated_backup';
+  const BACKUP_RETENTION_MS = 7 * 24 * 60 * 60 * 1000;
   const text = value => String(value ?? '').trim();
   const upper = value => text(value).toUpperCase();
 
@@ -85,6 +87,21 @@
     return expectedHash;
   }
 
+  async function cleanupExpiredMigrationBackups(now = Date.now()) {
+    const all = await chrome.storage.local.get(null);
+    const expired = [];
+    for (const [key, value] of Object.entries(all)) {
+      if (!key.endsWith(BACKUP_SUFFIX)) continue;
+      const migratedAt = Number(value?.migratedAt || 0);
+      if (!migratedAt || now - migratedAt > BACKUP_RETENTION_MS) expired.push(key);
+    }
+    if (expired.length) await chrome.storage.local.remove(expired);
+    return expired.length;
+  }
+
+  globalThis.cleanupExpiredMigrationBackups = cleanupExpiredMigrationBackups;
+  cleanupExpiredMigrationBackups().catch(() => {});
+
   if (typeof migrateSellerNamespace !== 'function') return;
 
   let migrationPromise = null;
@@ -92,11 +109,14 @@
     if (migrationPromise) return migrationPromise;
 
     migrationPromise = (async () => {
+      await cleanupExpiredMigrationBackups();
+
       const oldKey = sellerKeyFor(oldSeller);
       const newKey = sellerKeyFor(newSeller);
       if (oldKey === newKey) return;
 
-      const data = await chrome.storage.local.get([oldKey, newKey, STORAGE_INDEX_KEY]);
+      const backupKey = `${oldKey}${BACKUP_SUFFIX}`;
+      const data = await chrome.storage.local.get([oldKey, newKey, STORAGE_INDEX_KEY, backupKey]);
       const oldData = data[oldKey] || {};
       const newData = data[newKey] || {};
 
@@ -135,17 +155,21 @@
         integrity
       };
 
+      const migratedAt = Date.now();
       await chrome.storage.local.set({
         [STORAGE_INDEX_KEY]: index,
-        [`${oldKey}__migrated_backup`]: {
+        [backupKey]: {
           ...oldData,
-          migratedAt: Date.now(),
+          migratedAt,
+          expiresAt: migratedAt + BACKUP_RETENTION_MS,
+          retentionDays: 7,
           destinationKey: newKey,
           integrity
         }
       });
 
       if (data[oldKey]) await chrome.storage.local.remove(oldKey);
+      await cleanupExpiredMigrationBackups(migratedAt);
     })();
 
     try {

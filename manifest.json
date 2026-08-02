@@ -45,7 +45,8 @@
       "js": [
         "v341-pagination-guard.js",
         "content.js",
-        "v341-sync-restore.js"
+        "v341-sync-restore.js",
+        "v342-sync-watchdog.js"
       ],
       "css": [
         "content.css"

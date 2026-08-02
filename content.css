@@ -1,0 +1,124 @@
+#dc-flipkart-analytics-launcher {
+  position: fixed;
+  right: 28px;
+  top: 50px;
+  z-index: 2147483646;
+  width: 64px;
+  height: 64px;
+  border: 0;
+  border-radius: 17px;
+  background: linear-gradient(145deg, #2874f0, #174fc4);
+  box-shadow: 0 10px 28px rgba(18, 62, 156, .34);
+  display: grid;
+  place-items: center;
+  cursor: pointer;
+  transition: transform .18s ease, box-shadow .18s ease;
+}
+#dc-flipkart-analytics-launcher:hover {
+  transform: translateY(-2px) scale(1.03);
+  box-shadow: 0 14px 32px rgba(18, 62, 156, .42);
+}
+#dc-flipkart-analytics-launcher:active { transform: scale(.97); }
+#dc-flipkart-analytics-launcher svg { width: 31px; height: 31px; }
+#dc-flipkart-analytics-launcher .dc-tooltip {
+  position: absolute;
+  right: 76px;
+  white-space: nowrap;
+  background: #111827;
+  color: white;
+  font: 600 12px/1.2 Arial, sans-serif;
+  padding: 8px 10px;
+  border-radius: 8px;
+  opacity: 0;
+  pointer-events: none;
+  transform: translateX(6px);
+  transition: opacity .15s ease, transform .15s ease;
+}
+#dc-flipkart-analytics-launcher:hover .dc-tooltip {
+  opacity: 1;
+  transform: translateX(0);
+}
+@media (max-width: 700px) {
+  #dc-flipkart-analytics-launcher { right: 14px; top: 70px; width: 54px; height: 54px; border-radius: 15px; }
+  #dc-flipkart-analytics-launcher svg { width: 27px; height: 27px; }
+}
+
+html.dc-fk-modal-open,
+html.dc-fk-modal-open body { overflow: hidden !important; }
+
+#dc-flipkart-analytics-overlay {
+  position: fixed;
+  inset: 0;
+  z-index: 2147483647;
+  display: grid;
+  place-items: center;
+  padding: 36px clamp(18px, 6vw, 120px);
+  background: rgba(10, 18, 54, .58);
+  backdrop-filter: blur(7px);
+  -webkit-backdrop-filter: blur(7px);
+  opacity: 0;
+  transition: opacity .18s ease;
+  box-sizing: border-box;
+}
+#dc-flipkart-analytics-overlay.dc-open { opacity: 1; }
+#dc-flipkart-analytics-overlay.dc-closing { opacity: 0; }
+
+#dc-flipkart-analytics-overlay .dc-fk-modal {
+  position: relative;
+  width: min(1396px, 92vw);
+  height: min(900px, 91vh);
+  overflow: hidden;
+  border: 1px solid rgba(255,255,255,.65);
+  border-radius: 27px;
+  background: #fff;
+  box-shadow: 0 28px 90px rgba(4, 15, 54, .42);
+  transform: translateY(14px) scale(.985);
+  transition: transform .2s ease;
+}
+#dc-flipkart-analytics-overlay.dc-open .dc-fk-modal { transform: translateY(0) scale(1); }
+
+.dc-fk-dashboard-frame {
+  display: block;
+  width: 100%;
+  height: 100%;
+  border: 0;
+  background: #f5f7fb;
+}
+
+
+#dc-flipkart-analytics-dock {
+  position: fixed;
+  right: 16px;
+  bottom: 14px;
+  z-index: 2147483645;
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  padding: 9px 10px;
+  border: 1px solid #f1dda0;
+  border-radius: 18px;
+  background: #fffbea;
+  box-shadow: 0 8px 26px rgba(21, 39, 95, .22);
+  font-family: Arial, sans-serif;
+  color: #174fc4;
+}
+#dc-flipkart-analytics-dock button { font: inherit; }
+.dc-dock-collapse,.dc-dock-play {
+  width: 38px; height: 38px; border: 1px solid #d9e3fa; border-radius: 11px;
+  background:#fff; color:#1d5ee9; font-weight:800; cursor:pointer;
+}
+.dc-dock-main { display:flex; align-items:center; gap:8px; border:0; background:transparent; color:#1856d6; cursor:pointer; padding:0; }
+.dc-dock-main b { display:block; font-size:15px; line-height:1.05; }
+.dc-dock-main small { display:block; font-size:10px; font-weight:700; }
+.dc-dock-logo { display:grid; place-items:center; width:34px; height:34px; border-radius:8px; background:#ffe500; color:#1756cb; font-size:22px; }
+.dc-dock-off { padding:10px 13px; border:1px solid #d9e3fa; border-radius:10px; background:#fff; color:#2256c8; font-weight:700; cursor:pointer; }
+#dc-flipkart-analytics-dock.dc-collapsed .dc-dock-main span:last-child,
+#dc-flipkart-analytics-dock.dc-collapsed .dc-dock-off,
+#dc-flipkart-analytics-dock.dc-collapsed .dc-dock-play { display:none; }
+
+@media (max-width: 900px) {
+  #dc-flipkart-analytics-overlay { padding: 12px; }
+  #dc-flipkart-analytics-overlay .dc-fk-modal { width: 100%; height: 96vh; border-radius: 18px; }
+  
+  #dc-flipkart-analytics-dock { display:none; }
+}

@@ -1,0 +1,12 @@
+v3.2 critical fixes
+- financial records permanently deduplicated by transaction/settlement/return/item reference
+- API classification priority fixed
+- unmatched returns and settlements retained in separate tables
+- safer matching: item/shipment then order+SKU; no unsafe Order-ID-only allocation
+- profit renamed Estimated Profit
+- seller identity source/confidence retained
+- current-page sync messaging corrected
+- seller namespace migration removes stale old namespace
+- backup v3.2 schema validation
+- sync history and data coverage tables
+- PDF crop UI supports original/4x6/5x3/A4 when bundled pdf-lib is present

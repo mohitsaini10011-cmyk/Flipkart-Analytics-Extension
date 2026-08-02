@@ -1,0 +1,75 @@
+{
+  "manifest_version": 3,
+  "name": "Flipkart Analytics & Tools v3.3",
+  "version": "3.3",
+  "description": "Flipkart analytics with exact Flipkart label crop ratios from the supplied cropper rules.",
+  "permissions": [
+    "storage",
+    "downloads",
+    "tabs",
+    "activeTab"
+  ],
+  "host_permissions": [
+    "https://seller.flipkart.com/*",
+    "https://*.seller.flipkart.com/*"
+  ],
+  "action": {
+    "default_title": "Flipkart Analytics & Tools",
+    "default_icon": {
+      "16": "icons/icon16.png",
+      "32": "icons/icon32.png",
+      "48": "icons/icon48.png",
+      "128": "icons/icon128.png"
+    }
+  },
+  "background": {
+    "service_worker": "background.js"
+  },
+  "content_scripts": [
+    {
+      "matches": [
+        "https://seller.flipkart.com/*",
+        "https://*.seller.flipkart.com/*"
+      ],
+      "js": [
+        "page-bridge.js"
+      ],
+      "run_at": "document_start",
+      "world": "MAIN"
+    },
+    {
+      "matches": [
+        "https://seller.flipkart.com/*",
+        "https://*.seller.flipkart.com/*"
+      ],
+      "js": [
+        "content.js"
+      ],
+      "css": [
+        "content.css"
+      ],
+      "run_at": "document_start"
+    }
+  ],
+  "icons": {
+    "16": "icons/icon16.png",
+    "32": "icons/icon32.png",
+    "48": "icons/icon48.png",
+    "128": "icons/icon128.png"
+  },
+  "web_accessible_resources": [
+    {
+      "resources": [
+        "dashboard.html",
+        "styles.css",
+        "app.js",
+        "icons/*",
+        "page-bridge.js"
+      ],
+      "matches": [
+        "https://seller.flipkart.com/*",
+        "https://*.seller.flipkart.com/*"
+      ]
+    }
+  ]
+}

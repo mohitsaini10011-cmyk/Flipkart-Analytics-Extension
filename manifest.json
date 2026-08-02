@@ -1,8 +1,8 @@
 {
   "manifest_version": 3,
-  "name": "Ecom Insight v3.4.7",
-  "version": "3.4.7",
-  "description": "Flipkart seller analytics with unified sync recovery, structured reconciliation, accounting gates and large-account diagnostics.",
+  "name": "Ecom Insight v3.4.8",
+  "version": "3.4.8",
+  "description": "Flipkart seller analytics with guarded dashboard launch, unified sync recovery, exactly-once restoration and runtime diagnostics.",
   "permissions": ["storage", "downloads", "tabs", "activeTab"],
   "host_permissions": ["https://seller.flipkart.com/*", "https://*.seller.flipkart.com/*"],
   "action": {
@@ -24,7 +24,13 @@
     },
     {
       "matches": ["https://seller.flipkart.com/*", "https://*.seller.flipkart.com/*"],
-      "js": ["v346-context-guard.js", "v341-pagination-guard.js", "content.js", "v343-sync-controller.js"],
+      "js": [
+        "v346-context-guard.js",
+        "v341-pagination-guard.js",
+        "content.js",
+        "v343-sync-controller.js",
+        "v348-runtime-diagnostics.js"
+      ],
       "css": ["content.css"],
       "run_at": "document_start"
     }

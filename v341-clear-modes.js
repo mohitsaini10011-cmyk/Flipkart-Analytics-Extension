@@ -94,6 +94,7 @@
   function loadAdditionalRuntimes() {
     loadRuntime('v341-backup-schema.js', 'v341-backup-schema');
     loadRuntime('v341-data-coverage.js', 'v341-data-coverage');
+    loadRuntime('v341-seller-identity.js', 'v341-seller-identity');
   }
 
   if (document.readyState === 'loading') {

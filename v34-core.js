@@ -146,5 +146,11 @@
   async function clearMode(mode){capture.generation++;capture.paused=true;capture.clearTimestamp=Date.now();capture.activeSyncJobId=null;await saveCapture();post('CLEAR_DATA_GENERATION',{generation:capture.generation,clearTimestamp:capture.clearTimestamp});if(mode==='orders')rows=[];if(mode==='financial'){financialLedger=[];unmatchedFinancials=[];manualReviewFinancials=[]}if(mode==='returns')unmatchedReturns=[];if(mode==='all'){rows=[];inventoryRows=[];financialLedger=[];unmatchedReturns=[];unmatchedFinancials=[];manualReviewFinancials=[];syncHistory=[];lastLiveSync=null}if(typeof save==='function')save();if(typeof render==='function')render();renderMatchCounts(0,unmatchedReturns.length+unmatchedFinancials.length,manualReviewFinancials.length,0);}
   function replaceClearButton(id,label,mode){const old=document.getElementById(id);if(!old)return;const btn=old.cloneNode(true);old.replaceWith(btn);btn.textContent=label;btn.onclick=async()=>{if(confirm(`${label}? Capture Sync Now tak paused rahega.`))await clearMode(mode)}}
   async function boot(){await loadCapture();replaceClearButton('clearOrders','Clear Orders Only','orders');replaceClearButton('resetExtension','Clear All Seller Data','all');renderMatchCounts(0,(unmatchedReturns||[]).length+(unmatchedFinancials||[]).length,manualReviewFinancials.length,0);document.getElementById('syncBtn')?.addEventListener('click',async()=>{capture.paused=false;capture.activeSyncJobId=crypto.randomUUID();await saveCapture();post('RESUME_CAPTURE',{generation:capture.generation,syncJobId:capture.activeSyncJobId})},true);const ok=Boolean(globalThis.PDFLib?.PDFDocument),crop=document.getElementById('cropProcessBtn'),preview=document.getElementById('cropPreviewBtn'),status=document.getElementById('cropStatus');if(crop)crop.disabled=!ok;if(preview)preview.disabled=!ok;if(status)status.textContent=ok?'PDF engine ready (pdf-lib loaded locally).':'PDF engine unavailable.';}
+
+  const migrationIntegrityScript=document.createElement('script');
+  migrationIntegrityScript.src=chrome.runtime.getURL('v341-migration-integrity.js');
+  migrationIntegrityScript.async=false;
+  document.documentElement.appendChild(migrationIntegrityScript);
+
   if(document.readyState==='loading')document.addEventListener('DOMContentLoaded',boot,{once:true});else boot();
 })();

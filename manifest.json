@@ -1,8 +1,8 @@
 {
   "manifest_version": 3,
-  "name": "Flipkart Analytics & Tools v3.4.1",
-  "version": "3.4.1",
-  "description": "Flipkart seller analytics with full-account sync, structured inventory parsing, safer reconciliation, local PDF cropping and seller-isolated backups.",
+  "name": "Flipkart Analytics & Tools v3.4.2",
+  "version": "3.4.2",
+  "description": "Flipkart seller analytics with verified PDF outputs, structured reconciliation, large-account diagnostics and seller-isolated backups.",
   "permissions": [
     "storage",
     "downloads",
@@ -79,7 +79,8 @@
         "v341-returns-parser.js",
         "v341-payments-parser.js",
         "v341-settlements-parser.js",
-        "v341-xlsx-importer.js"
+        "v341-xlsx-importer.js",
+        "v342-production-hardening.js"
       ],
       "matches": [
         "https://seller.flipkart.com/*",

@@ -1,8 +1,8 @@
 {
   "manifest_version": 3,
-  "name": "Flipkart Analytics & Tools v3.4.3",
-  "version": "3.4.3",
-  "description": "Flipkart seller analytics with unified sync recovery, chunked PDF outputs, accounting gates and real large-account diagnostics.",
+  "name": "Flipkart Analytics & Tools v3.4.4",
+  "version": "3.4.4",
+  "description": "Flipkart seller analytics with unified sync recovery, accounting gates, structured reconciliation and large-account diagnostics.",
   "permissions": [
     "storage",
     "downloads",
@@ -81,7 +81,8 @@
         "v341-settlements-parser.js",
         "v341-xlsx-importer.js",
         "v343-production-hardening.js",
-        "v343-logo.js"
+        "v343-logo.js",
+        "v344-remove-crop.js"
       ],
       "matches": [
         "https://seller.flipkart.com/*",

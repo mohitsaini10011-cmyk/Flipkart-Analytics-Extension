@@ -1,0 +1,19 @@
+Ecom Insight v3.5.0 Validation Report
+
+SOURCE-LEVEL PASS
+- All previous context guards, cancellation sequencing, single restore ownership, heartbeat cleanup, branding, icons and cropper removal remain present.
+- restoreIssuedAt and restoreTarget are persisted in the completed sync record before location.assign runs.
+- Runtime diagnostics writes remain serialized through one promise queue.
+- Durable syncSummaries are stored separately from the rolling event history.
+- Every summary is keyed by syncId and retains start, finish, restore, navigation and stall state.
+- Runtime report includes allStartedSyncsFinished.
+- exactlyOneRestorePerRequiredSync now requires all started syncs to finish.
+- Extension error classification uses the current chrome-extension URL, unique extension filenames and Ecom Insight prefixes; generic app.js is not sufficient.
+- Stale-context evidence persistence has one owner and includes short-window deduplication.
+- Toolbar send failure shows a red ! badge and a reload instruction in the action title for nine seconds.
+- Public timeout test hook remains absent.
+- Manifest version is 3.5.0.
+
+RUNTIME TEST STATUS
+Not executed in this source audit. Authenticated Chrome testing requires the user's active Flipkart Seller Hub session.
+See RUNTIME_TEST_RESULTS_V350.md for the separate runtime result record and exact steps.

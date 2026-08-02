@@ -75,7 +75,8 @@
         "v341-inventory-parser.js",
         "v341-data-coverage.js",
         "v341-seller-identity.js",
-        "v341-orders-parser.js"
+        "v341-orders-parser.js",
+        "v341-returns-parser.js"
       ],
       "matches": [
         "https://seller.flipkart.com/*",

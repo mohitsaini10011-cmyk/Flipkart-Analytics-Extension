@@ -8,6 +8,8 @@
   let heartbeatTimer = null;
   let lastFingerprint = '';
   let lastChangeAt = Date.now();
+  let finishing = false;
+  let restoreIssued = false;
 
   const frame = () => document.querySelector(`#${OVERLAY_ID} iframe`);
   function extensionContextAvailable() {
@@ -38,14 +40,26 @@
     heartbeatTimer = null;
   }
 
+  function emitDiagnostic(type, detail = {}) {
+    try { window.dispatchEvent(new CustomEvent('dc-fk-runtime-diagnostic', { detail: { type, at: Date.now(), ...detail } })); }
+    catch {}
+  }
+
   async function finish(result, restore = true) {
-    if (!state) return;
+    if (!state || finishing) return;
+    finishing = true;
     const completed = { ...state, active: false, result, finishedAt: Date.now(), finalUrl: location.href };
     const originalUrl = validUrl(state.originalUrl);
     state = null;
     stopTimer();
     await persist(completed);
-    if (restore && originalUrl && !sameUrl(location.href, originalUrl)) location.assign(originalUrl);
+    emitDiagnostic('sync-finished', { result, originalUrl, finalUrl: location.href });
+    if (restore && originalUrl && !sameUrl(location.href, originalUrl) && !restoreIssued) {
+      restoreIssued = true;
+      emitDiagnostic('restore-issued', { result, originalUrl, fromUrl: location.href });
+      location.assign(originalUrl);
+    }
+    finishing = false;
   }
 
   function fingerprint() {
@@ -59,6 +73,7 @@
       stopTimer();
       state = null;
       try { sessionStorage.removeItem(STATE_KEY); } catch {}
+      emitDiagnostic('context-invalid-heartbeat-stop');
       return;
     }
     if (!state?.active) return;
@@ -74,6 +89,7 @@
       state.lastStallAt = now;
       lastChangeAt = now;
       persist();
+      emitDiagnostic('sync-stall', { stallCount: state.stallCount, elapsedMs: now - state.startedAt });
       try {
         frame()?.contentWindow?.postMessage({ source: 'DC_FK_HOST', type: 'SYNC_WATCHDOG_STALL', payload: { stallCount: state.stallCount, elapsedMs: now - state.startedAt } }, '*');
       } catch {}
@@ -89,6 +105,8 @@
 
   function begin() {
     if (!extensionContextAvailable() || state?.active) return;
+    restoreIssued = false;
+    finishing = false;
     state = {
       active: true,
       id: crypto.randomUUID(),
@@ -103,6 +121,7 @@
     lastChangeAt = Date.now();
     persist();
     startTimer();
+    emitDiagnostic('sync-started', { id: state.id, originalUrl: state.originalUrl });
   }
 
   function markNavigation() {
@@ -112,6 +131,7 @@
       state.visitedUrls.push(location.href);
       state.visitedUrls = state.visitedUrls.slice(-30);
       state.navigationCount++;
+      emitDiagnostic('sync-navigation', { url: location.href, navigationCount: state.navigationCount });
     }
     persist();
   }
@@ -129,7 +149,7 @@
     if (!trustedDashboardMessage(event)) return;
     const type = event.data?.type;
     if (type === 'AUTO_SYNC_ALL') begin();
-    if (type === 'CANCEL_AUTO_SYNC') finish('cancelled', true);
+    if (type === 'CANCEL_AUTO_SYNC') emitDiagnostic('cancel-requested');
   }, true);
 
   window.addEventListener('dc-fk-sync-lifecycle', event => {
@@ -142,7 +162,17 @@
   window.addEventListener('dc-extension-context-invalid', () => {
     stopTimer();
     state = null;
+    finishing = false;
     try { sessionStorage.removeItem(STATE_KEY); } catch {}
+    emitDiagnostic('context-invalid-cleanup');
+  });
+
+  window.addEventListener('dc-fk-test-timeout', () => {
+    if (!state?.active) begin();
+    if (state) {
+      state.startedAt = Date.now() - MAX_SYNC_MS - 1000;
+      heartbeat();
+    }
   });
 
   const push = history.pushState.bind(history);
@@ -157,6 +187,7 @@
     const recovered = JSON.parse(sessionStorage.getItem(STATE_KEY) || 'null');
     if (recovered?.active && extensionContextAvailable()) {
       state = recovered;
+      restoreIssued = false;
       if (Date.now() - Number(state.startedAt || 0) >= MAX_SYNC_MS) finish('expired', true);
       else { lastFingerprint = fingerprint(); lastChangeAt = Date.now(); startTimer(); markNavigation(); }
     }

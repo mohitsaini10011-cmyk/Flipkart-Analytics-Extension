@@ -71,7 +71,8 @@
         "v341-migration-integrity.js",
         "v341-clear-modes.js",
         "v341-backup-schema.js",
-        "v341-inventory-parser.js"
+        "v341-inventory-parser.js",
+        "v341-data-coverage.js"
       ],
       "matches": [
         "https://seller.flipkart.com/*",

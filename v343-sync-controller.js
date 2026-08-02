@@ -46,17 +46,32 @@
   async function finish(result, restore = true) {
     if (!state || finishing) return;
     finishing = true;
-    const syncId = state.id;
-    const completed = { ...state, active: false, result, finishedAt: Date.now(), finalUrl: location.href };
-    const originalUrl = validUrl(state.originalUrl);
+    const activeState = state;
+    const syncId = activeState.id;
+    const originalUrl = validUrl(activeState.originalUrl);
     const requiresRestore = Boolean(restore && originalUrl && !sameUrl(location.href, originalUrl));
+    const completed = {
+      ...activeState,
+      active: false,
+      result,
+      finishedAt: Date.now(),
+      finalUrl: location.href,
+      requiresRestore
+    };
+
+    if (requiresRestore && !restoreIssued) {
+      restoreIssued = true;
+      completed.restoreIssuedAt = Date.now();
+      completed.restoreTarget = originalUrl;
+    }
+
     state = null;
     stopTimer();
     await persist(completed);
-    emitDiagnostic('sync-finished', { syncId, result, originalUrl, finalUrl: location.href, requiresRestore });
-    if (requiresRestore && !restoreIssued) {
-      restoreIssued = true;
-      emitDiagnostic('restore-issued', { syncId, result, originalUrl, fromUrl: location.href });
+    emitDiagnostic('sync-finished', { syncId, result, originalUrl, finalUrl: location.href, requiresRestore, restoreIssuedAt: completed.restoreIssuedAt || null });
+
+    if (completed.restoreIssuedAt) {
+      emitDiagnostic('restore-issued', { syncId, result, originalUrl, fromUrl: location.href, restoreIssuedAt: completed.restoreIssuedAt });
       location.assign(originalUrl);
     }
     finishing = false;

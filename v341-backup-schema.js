@@ -6,6 +6,7 @@
   const arrays = ['rows','inventoryRows','unmatchedReturns','unmatchedFinancials','financialLedger','syncHistory'];
   const finite = value => Number.isFinite(Number(value));
   const serialDate = value => value instanceof Date && !Number.isNaN(value.getTime()) ? value.toISOString() : value || null;
+  const clone = value => structuredClone(value);
 
   function sanitizeRows(list = []) {
     return list.map(item => ({ ...item, date: serialDate(item?.date) }));
@@ -72,36 +73,145 @@
     if (typeof show === 'function') show('Backup v3.4.1 downloaded.');
   }
 
+  function makeCandidate(data) {
+    const restoredSeller = data.seller
+      ? { ...data.seller, stableKey: data.seller.stableKey || sellerIdentityKey(data.seller) }
+      : connectedSeller;
+    const candidateRows = (data.rows || []).map(item => ({ ...item, date: item.date ? new Date(item.date) : null }));
+    if (candidateRows.some(item => item.date && Number.isNaN(item.date.getTime()))) throw new Error('Backup contains an invalid order date');
+    return {
+      seller: restoredSeller,
+      rows: candidateRows,
+      inventoryRows: clone(data.inventoryRows || []),
+      unmatchedReturns: clone(data.unmatchedReturns || []),
+      unmatchedFinancials: clone(data.unmatchedFinancials || []),
+      financialLedger: clone(data.financialLedger || []),
+      syncHistory: clone(data.syncHistory || []),
+      skuCosts: clone(data.skuCosts || {}),
+      mapping: clone(data.mapping || {}),
+      lastLiveSync: data.lastLiveSync || null,
+      moduleStatus: clone(data.moduleStatus || moduleStatus),
+      settings: {
+        costPct: Number(data.settings?.costPct ?? costPct),
+        packCost: Number(data.settings?.packCost ?? packCost),
+        adSpend: Number(data.settings?.adSpend ?? adSpend),
+        otherExpense: Number(data.settings?.otherExpense ?? otherExpense)
+      }
+    };
+  }
+
+  function serialCandidate(candidate) {
+    return {
+      rows: sanitizeRows(candidate.rows),
+      inventoryRows: candidate.inventoryRows,
+      unmatchedReturns: candidate.unmatchedReturns,
+      unmatchedFinancials: candidate.unmatchedFinancials,
+      financialLedger: candidate.financialLedger,
+      syncHistory: candidate.syncHistory,
+      skuCosts: candidate.skuCosts,
+      settings: candidate.settings,
+      mapping: candidate.mapping,
+      lastLiveSync: candidate.lastLiveSync,
+      moduleStatus: candidate.moduleStatus,
+      restoredFromBackup: { version: BACKUP_VERSION, restoredAt: Date.now() }
+    };
+  }
+
+  function verifyStored(candidate, stored) {
+    if (!stored || typeof stored !== 'object') throw new Error('Temporary restore verification failed');
+    const expected = serialCandidate(candidate);
+    for (const key of ['rows','inventoryRows','unmatchedReturns','unmatchedFinancials','financialLedger','syncHistory']) {
+      if (!Array.isArray(stored[key]) || stored[key].length !== expected[key].length) throw new Error(`${key} verification failed`);
+    }
+    if (JSON.stringify(stored.skuCosts || {}) !== JSON.stringify(expected.skuCosts || {})) throw new Error('SKU cost verification failed');
+    if (JSON.stringify(stored.settings || {}) !== JSON.stringify(expected.settings || {})) throw new Error('Settings verification failed');
+    return true;
+  }
+
+  function snapshotGlobals() {
+    return {
+      connectedSeller: clone(connectedSeller), rows: clone(rows), inventoryRows: clone(inventoryRows),
+      unmatchedReturns: clone(unmatchedReturns), unmatchedFinancials: clone(unmatchedFinancials),
+      financialLedger: clone(financialLedger), syncHistory: clone(syncHistory), skuCosts: clone(skuCosts),
+      mapping: clone(mapping), lastLiveSync, moduleStatus: clone(moduleStatus),
+      costPct, packCost, adSpend, otherExpense
+    };
+  }
+
+  function applyGlobals(candidate) {
+    connectedSeller = candidate.seller;
+    rows = candidate.rows;
+    inventoryRows = candidate.inventoryRows;
+    unmatchedReturns = candidate.unmatchedReturns;
+    unmatchedFinancials = candidate.unmatchedFinancials;
+    financialLedger = candidate.financialLedger;
+    syncHistory = candidate.syncHistory;
+    skuCosts = candidate.skuCosts;
+    mapping = candidate.mapping;
+    lastLiveSync = candidate.lastLiveSync;
+    moduleStatus = candidate.moduleStatus;
+    ({ costPct, packCost, adSpend, otherExpense } = candidate.settings);
+  }
+
+  function restoreGlobals(snapshot) {
+    connectedSeller = snapshot.connectedSeller;
+    rows = snapshot.rows;
+    inventoryRows = snapshot.inventoryRows;
+    unmatchedReturns = snapshot.unmatchedReturns;
+    unmatchedFinancials = snapshot.unmatchedFinancials;
+    financialLedger = snapshot.financialLedger;
+    syncHistory = snapshot.syncHistory;
+    skuCosts = snapshot.skuCosts;
+    mapping = snapshot.mapping;
+    lastLiveSync = snapshot.lastLiveSync;
+    moduleStatus = snapshot.moduleStatus;
+    ({ costPct, packCost, adSpend, otherExpense } = snapshot);
+  }
+
   async function restoreBackup(file) {
     if (!file) return;
     if (file.size > MAX_BACKUP_BYTES) throw new Error('Backup file exceeds 25 MB limit');
     const data = JSON.parse(await file.text());
     validateBackup(data);
+    const candidate = makeCandidate(data);
+    if (!candidate.seller) throw new Error('Backup seller identity is missing');
 
-    const restoredSeller = data.seller ? { ...data.seller, stableKey: data.seller.stableKey || sellerIdentityKey(data.seller) } : connectedSeller;
-    if (restoredSeller) connectedSeller = restoredSeller;
-    rows = (data.rows || []).map(item => ({ ...item, date: item.date ? new Date(item.date) : null }));
-    inventoryRows = data.inventoryRows || [];
-    unmatchedReturns = data.unmatchedReturns || [];
-    unmatchedFinancials = data.unmatchedFinancials || [];
-    financialLedger = data.financialLedger || [];
-    syncHistory = data.syncHistory || [];
-    skuCosts = data.skuCosts || {};
-    mapping = data.mapping || {};
-    lastLiveSync = data.lastLiveSync || null;
-    moduleStatus = data.moduleStatus || moduleStatus;
-    if (data.settings) {
-      costPct = Number(data.settings.costPct ?? costPct);
-      packCost = Number(data.settings.packCost ?? packCost);
-      adSpend = Number(data.settings.adSpend ?? adSpend);
-      otherExpense = Number(data.settings.otherExpense ?? otherExpense);
+    const snapshot = snapshotGlobals();
+    const oldSeller = snapshot.connectedSeller;
+    const oldKey = sellerKeyFor(oldSeller || candidate.seller);
+    const newKey = sellerKeyFor(candidate.seller);
+    const tempKey = `${newKey}__restore_tmp_${crypto.randomUUID()}`;
+    const storageBefore = await chrome.storage.local.get([oldKey, newKey, 'connectedSeller']);
+    const serialized = serialCandidate(candidate);
+
+    try {
+      await chrome.storage.local.set({ [tempKey]: serialized });
+      const tempStored = (await chrome.storage.local.get(tempKey))[tempKey];
+      verifyStored(candidate, tempStored);
+
+      await chrome.storage.local.set({ [newKey]: serialized, connectedSeller: candidate.seller });
+      const committed = await chrome.storage.local.get([newKey, 'connectedSeller']);
+      verifyStored(candidate, committed[newKey]);
+      if (sellerIdentityKey(committed.connectedSeller) !== sellerIdentityKey(candidate.seller)) throw new Error('Seller identity verification failed');
+
+      applyGlobals(candidate);
+      if (typeof render === 'function') render();
+      if (typeof updateConnectionUI === 'function') updateConnectionUI();
+      await chrome.storage.local.remove(tempKey);
+      if (typeof show === 'function') show(`Backup ${data.version || 'legacy'} restored successfully.`);
+    } catch (error) {
+      restoreGlobals(snapshot);
+      const rollback = {};
+      if (storageBefore[oldKey] !== undefined) rollback[oldKey] = storageBefore[oldKey];
+      if (newKey !== oldKey && storageBefore[newKey] !== undefined) rollback[newKey] = storageBefore[newKey];
+      if (storageBefore.connectedSeller !== undefined) rollback.connectedSeller = storageBefore.connectedSeller;
+      if (Object.keys(rollback).length) await chrome.storage.local.set(rollback);
+      if (newKey !== oldKey && storageBefore[newKey] === undefined) await chrome.storage.local.remove(newKey);
+      await chrome.storage.local.remove(tempKey);
+      if (typeof render === 'function') render();
+      if (typeof updateConnectionUI === 'function') updateConnectionUI();
+      throw error;
     }
-
-    await chrome.storage.local.set({ connectedSeller });
-    if (typeof save === 'function') save();
-    if (typeof render === 'function') render();
-    if (typeof updateConnectionUI === 'function') updateConnectionUI();
-    if (typeof show === 'function') show(`Backup ${data.version || 'legacy'} restored successfully.`);
   }
 
   function bind() {

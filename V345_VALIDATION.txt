@@ -1,0 +1,7 @@
+PASS icons/icon16.png: 16x16
+PASS icons/icon32.png: 32x32
+PASS icons/icon48.png: 48x48
+PASS icons/icon128.png: 128x128
+PASS JavaScript syntax
+PASS dashboard required IDs
+PASS cropper source cleanup

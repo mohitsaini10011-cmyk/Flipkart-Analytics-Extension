@@ -98,6 +98,7 @@
     loadRuntime('v341-orders-parser.js', 'v341-orders-parser');
     loadRuntime('v341-returns-parser.js', 'v341-returns-parser');
     loadRuntime('v341-payments-parser.js', 'v341-payments-parser');
+    loadRuntime('v341-settlements-parser.js', 'v341-settlements-parser');
   }
 
   if (document.readyState === 'loading') {

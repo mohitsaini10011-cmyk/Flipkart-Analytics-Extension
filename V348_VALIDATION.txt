@@ -1,0 +1,31 @@
+Ecom Insight v3.4.8 Validation Report
+
+SOURCE-LEVEL PASS
+- Manifest version is 3.4.8.
+- Context guard loads before content.js.
+- openDashboard has a direct extension-context guard.
+- chrome.runtime.onMessage registration is guarded.
+- Page launcher and toolbar/runtime dashboard opens are captured by runtime diagnostics.
+- Sync cancellation waits for the content sync loop to emit the cancelled lifecycle before restoration.
+- v343-sync-controller.js is the only original-page restoration owner.
+- Restoration has finishing and restoreIssued locks to prevent duplicate redirects.
+- Stalled sync heartbeat records stalls and restores on timeout.
+- dc-fk-test-timeout provides a deterministic timeout-path test hook.
+- Invalid extension context stops heartbeat and clears active sync state.
+- Invalid-context custom events display the reload notice.
+- Runtime diagnostics capture dashboard open/close, sync lifecycle, restore attempts, window errors and unhandled rejections.
+- Runtime report is available through dc-fk-runtime-report-request / dc-fk-runtime-report events.
+- Dock and launcher branding use Ecom Insight.
+- Cropper and PDF runtime remain removed.
+
+RUNTIME TEST PROCEDURE
+1. Keep Flipkart Seller Hub open, reload the extension and click the page launcher. Expected: reload notice, no uncaught context-invalidated error.
+2. Refresh Seller Hub and open Ecom Insight from the page launcher. Expected: one dashboard-opened event with source page-launcher.
+3. Close it and open from the Chrome toolbar icon. Expected: one dashboard-opened event with source toolbar-or-runtime.
+4. Start complete sync. Expected: one sync-started and one terminal sync-finished event.
+5. Cancel midway. Expected: cancel-requested, then cancelled lifecycle, then no more than one restore-issued event.
+6. For deterministic timeout testing, dispatch dc-fk-test-timeout during an active sync. Expected: timeout finish and no more than one restore-issued event.
+7. Request dc-fk-runtime-report. Expected: consoleErrorCount = 0 and exactlyOneRestorePerFinishedSync = true.
+
+IMPORTANT
+This report verifies source-level wiring and adds runtime instrumentation. Actual authenticated Seller Hub behavior must still be executed in Chrome because GitHub static analysis cannot log into or operate the user's seller account.

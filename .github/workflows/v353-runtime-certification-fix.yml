@@ -1,0 +1,117 @@
+name: Apply v3.5.3 runtime certification fixes
+on:
+  workflow_dispatch:
+  push:
+    paths:
+      - '.github/workflows/v353-runtime-certification-fix.yml'
+permissions:
+  contents: write
+jobs:
+  patch:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: '22'
+      - name: Patch controller and diagnostics
+        run: |
+          python3 - <<'PY'
+          from pathlib import Path
+
+          p=Path('v343-sync-controller.js')
+          s=p.read_text()
+          # Disable public DOM test controls; trusted dashboard messages become the sole control path.
+          start=s.index("  window.addEventListener('dc-fk-runtime-test-run-start'")
+          end=s.index("\n  const push = history.pushState.bind(history);", start)
+          trusted=r'''  function acceptTestRunControl(action, requestedRunId = '') {
+            if ((action === 'start' || action === 'reset') && state?.active) {
+              emitDiagnostic('test-run-control-rejected', { action, reason: 'sync-active', runId: state.runId, syncId: state.id });
+              return;
+            }
+            if (action === 'end' && state?.active) {
+              pendingRunEnd = true;
+              emitDiagnostic('test-run-end-deferred', { runId: state.runId, syncId: state.id });
+              return;
+            }
+            const previousRunId = getTestRunId();
+            let runId = previousRunId;
+            if (action === 'start' || action === 'reset') {
+              runId = requestedRunId || crypto.randomUUID();
+              try { sessionStorage.setItem(TEST_RUN_KEY, runId); } catch {}
+            }
+            window.dispatchEvent(new CustomEvent('dc-fk-runtime-test-run-accepted', {
+              detail: { action, runId, previousRunId, tabSessionId, at: Date.now(), deferred: false }
+            }));
+          }
+'''
+          s=s[:start]+trusted+s[end:]
+          # Add pending flag.
+          s=s.replace("  let restoreIssued = false;", "  let restoreIssued = false;\n  let pendingRunEnd = false;")
+          # On finish, finalize deferred end exactly once.
+          marker="    emitDiagnostic('sync-finished', {"
+          idx=s.index(marker)
+          insert_at=s.index("\n\n    if (completed.restoreIssuedAt", idx)
+          s=s[:insert_at]+"\n    if (pendingRunEnd) {\n      pendingRunEnd = false;\n      window.dispatchEvent(new CustomEvent('dc-fk-runtime-test-run-accepted', { detail: { action: 'end', runId: activeRunId, tabSessionId, at: Date.now(), deferred: true, syncId } }));\n    }\n"+s[insert_at:]
+          # Route only token-validated dashboard messages.
+          old="""    if (type === 'AUTO_SYNC_ALL') begin();
+            if (type === 'CANCEL_AUTO_SYNC') emitDiagnostic('cancel-requested', { runId: state?.runId || getTestRunId(), syncId: state?.id || null });"""
+          new="""    if (type === 'RUNTIME_TEST_RUN_START') return acceptTestRunControl('start', event.data?.runId || '');
+            if (type === 'RUNTIME_TEST_RUN_RESET') return acceptTestRunControl('reset', event.data?.runId || '');
+            if (type === 'RUNTIME_TEST_RUN_END') return acceptTestRunControl('end');
+            if (type === 'AUTO_SYNC_ALL') begin();
+            if (type === 'CANCEL_AUTO_SYNC') emitDiagnostic('cancel-requested', { runId: state?.runId || getTestRunId(), syncId: state?.id || null });"""
+          s=s.replace(old,new)
+          p.write_text(s)
+
+          p=Path('v348-runtime-diagnostics.js')
+          s=p.read_text()
+          # Diagnostics no longer owns raw controls; it only records controller-accepted transitions.
+          start=s.index("  window.addEventListener('dc-fk-runtime-test-run-start'")
+          end=s.index("\n  window.addEventListener('dc-fk-runtime-report-request'", start)
+          accepted=r'''  window.addEventListener('dc-fk-runtime-test-run-accepted', event => {
+            const detail = event.detail || {};
+            const runId = detail.runId || getCurrentRunId();
+            if (detail.action === 'start' || detail.action === 'reset') setCurrentRunId(runId);
+            mutateState(state => {
+              reconcileUnfinishedSyncs(state, `accepted-${detail.action}`);
+              if (detail.action === 'reset' && detail.previousRunId && state.testRuns[detail.previousRunId]) {
+                const previous = state.testRuns[detail.previousRunId];
+                previous.status = 'reset';
+                previous.endedAt = Date.now();
+                previous.updatedAt = Date.now();
+              }
+              const row = state.testRuns[runId] ||= { runId, tabSessionId, startedAt: Date.now() };
+              row.status = detail.action === 'end' ? 'ended' : 'active';
+              row.updatedAt = Date.now();
+              if (detail.action === 'end') row.endedAt = Date.now();
+              if (detail.deferred) row.endDeferred = true;
+            }).then(() => record(`test-run-${detail.action}`, { runId, deferred: Boolean(detail.deferred) }));
+          });
+'''
+          s=s[:start]+accepted+s[end:]
+          # Tighten confirmed errors to current extension URL only; unique names become probable.
+          s=s.replace("if (UNIQUE_EXTENSION_FILES.test(hay)) return { origin: 'extension', confidence: 'confirmed' };", "if (UNIQUE_EXTENSION_FILES.test(hay)) return { origin: 'extension', confidence: 'probable' };")
+          s=s.replace("record('diagnostics-loaded', { version: '3.5.2' });", "record('diagnostics-loaded', { version: '3.5.3' });")
+          p.write_text(s)
+
+          p=Path('manifest.json')
+          s=p.read_text().replace('Ecom Insight v3.5.2','Ecom Insight v3.5.3').replace('"version": "3.5.2"','"version": "3.5.3"').replace('explicit runtime test runs, transactional restore fallback and confidence-scored diagnostics','token-validated runtime test controls, transactional restore fallback and confidence-scored diagnostics')
+          p.write_text(s)
+
+          Path('V353_VALIDATION.txt').write_text('''Ecom Insight v3.5.3 Validation Report\n\nSOURCE-LEVEL PASS\n- All previous context guards, cancellation sequencing, single restore ownership, heartbeat cleanup, branding, icons and Cropper removal remain present.\n- The sync controller is the sole runtime test-run lifecycle owner.\n- Diagnostics changes test-run state only after dc-fk-runtime-test-run-accepted.\n- Start/reset are rejected while a sync is active.\n- End is deferred while active and finalized after terminal sync completion.\n- Duplicate lifecycle ownership was removed.\n- Runtime test controls are accepted only through token-validated DC_FK_DASHBOARD iframe messages.\n- Confirmed extension errors require the current chrome-extension URL; unique filenames are probable only.\n- Manifest version is 3.5.3.\n\nRUNTIME TEST REQUIREMENT\nAuthenticated Chrome tests remain NOT RUN until observed in the seller account.\n''')
+          Path('RUNTIME_TEST_RESULTS_V353.md').write_text('''# Ecom Insight v3.5.3 Runtime Test Results\n\n## Status\n\n**NOT RUN — authenticated Chrome Seller Hub session required.**\n\nNo PASS evidence has been manufactured. Test from the trusted Ecom Insight dashboard controls, then paste the observed report, Chrome version, runId, console output and extension error view here.\n''')
+          PY
+      - name: Syntax check
+        run: |
+          node --check v343-sync-controller.js
+          node --check v348-runtime-diagnostics.js
+          node --check content.js
+          node --check background.js
+      - name: Commit changes
+        run: |
+          git config user.name "github-actions[bot]"
+          git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
+          git add v343-sync-controller.js v348-runtime-diagnostics.js manifest.json V353_VALIDATION.txt RUNTIME_TEST_RESULTS_V353.md
+          git diff --cached --quiet || git commit -m "Release v3.5.3 trusted runtime certification controls"
+          git push

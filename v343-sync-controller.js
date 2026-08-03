@@ -1,6 +1,7 @@
 'use strict';
 (() => {
   const STATE_KEY = 'dc_fk_sync_controller_v343';
+  const RUN_KEY = 'dc_fk_runtime_run_v351';
   const OVERLAY_ID = 'dc-flipkart-analytics-overlay';
   const MAX_SYNC_MS = 15 * 60 * 1000;
   const STALL_MS = 2 * 60 * 1000;
@@ -16,6 +17,17 @@
     try { return Boolean(globalThis.chrome?.runtime?.id && chrome.storage?.local); }
     catch { return false; }
   }
+  function getRunId() {
+    try {
+      let value = sessionStorage.getItem(RUN_KEY);
+      if (!value) {
+        value = crypto.randomUUID();
+        sessionStorage.setItem(RUN_KEY, value);
+      }
+      return value;
+    } catch { return crypto.randomUUID(); }
+  }
+  const runId = getRunId();
   const validUrl = value => {
     try {
       const url = new URL(value, location.href);
@@ -24,13 +36,28 @@
   };
   const sameUrl = (a, b) => validUrl(a) === validUrl(b);
 
-  async function persist(completed = null) {
-    if (!extensionContextAvailable()) { stopTimer(); return; }
+  async function persistRecord(record = state, keepSessionFallback = true) {
+    let sessionSaved = false;
+    let chromeSaved = false;
     try {
-      if (state) sessionStorage.setItem(STATE_KEY, JSON.stringify(state));
-      else sessionStorage.removeItem(STATE_KEY);
+      if (record) {
+        sessionStorage.setItem(STATE_KEY, JSON.stringify(record));
+        sessionSaved = true;
+      } else {
+        sessionStorage.removeItem(STATE_KEY);
+        sessionSaved = true;
+      }
     } catch {}
-    try { await chrome.storage.local.set({ [STATE_KEY]: completed || state }); } catch {}
+    if (extensionContextAvailable()) {
+      try {
+        await chrome.storage.local.set({ [STATE_KEY]: record });
+        chromeSaved = true;
+      } catch {}
+    }
+    if (chromeSaved && !keepSessionFallback && !record?.active) {
+      try { sessionStorage.removeItem(STATE_KEY); } catch {}
+    }
+    return { ok: chromeSaved || sessionSaved, chromeSaved, sessionSaved };
   }
 
   function stopTimer() {
@@ -39,8 +66,11 @@
   }
 
   function emitDiagnostic(type, detail = {}) {
-    try { window.dispatchEvent(new CustomEvent('dc-fk-runtime-diagnostic', { detail: { type, at: Date.now(), syncId: state?.id || detail.syncId || null, ...detail } })); }
-    catch {}
+    try {
+      window.dispatchEvent(new CustomEvent('dc-fk-runtime-diagnostic', {
+        detail: { type, at: Date.now(), runId, syncId: state?.id || detail.syncId || null, ...detail }
+      }));
+    } catch {}
   }
 
   async function finish(result, restore = true) {
@@ -52,6 +82,7 @@
     const requiresRestore = Boolean(restore && originalUrl && !sameUrl(location.href, originalUrl));
     const completed = {
       ...activeState,
+      runId,
       active: false,
       result,
       finishedAt: Date.now(),
@@ -67,12 +98,25 @@
 
     state = null;
     stopTimer();
-    await persist(completed);
-    emitDiagnostic('sync-finished', { syncId, result, originalUrl, finalUrl: location.href, requiresRestore, restoreIssuedAt: completed.restoreIssuedAt || null });
+    const persisted = await persistRecord(completed, true);
+    emitDiagnostic('sync-finished', {
+      syncId, result, originalUrl, finalUrl: location.href, requiresRestore,
+      restoreIssuedAt: completed.restoreIssuedAt || null,
+      persistence: persisted
+    });
 
-    if (completed.restoreIssuedAt) {
-      emitDiagnostic('restore-issued', { syncId, result, originalUrl, fromUrl: location.href, restoreIssuedAt: completed.restoreIssuedAt });
+    if (completed.restoreIssuedAt && persisted.ok) {
+      emitDiagnostic('restore-issued', {
+        syncId, result, originalUrl, fromUrl: location.href,
+        restoreIssuedAt: completed.restoreIssuedAt,
+        persistence: persisted
+      });
       location.assign(originalUrl);
+      return;
+    }
+    if (completed.restoreIssuedAt && !persisted.ok) {
+      restoreIssued = false;
+      emitDiagnostic('restore-blocked-persistence-failed', { syncId, originalUrl });
     }
     finishing = false;
   }
@@ -88,7 +132,6 @@
       stopTimer();
       const syncId = state?.id || null;
       state = null;
-      try { sessionStorage.removeItem(STATE_KEY); } catch {}
       emitDiagnostic('context-invalid-heartbeat-stop', { syncId });
       return;
     }
@@ -99,14 +142,19 @@
       lastFingerprint = current;
       lastChangeAt = now;
       state.lastProgressAt = now;
-      persist();
+      persistRecord(state);
     } else if (now - lastChangeAt >= STALL_MS) {
       state.stallCount = Number(state.stallCount || 0) + 1;
       state.lastStallAt = now;
       lastChangeAt = now;
-      persist();
+      persistRecord(state);
       emitDiagnostic('sync-stall', { syncId: state.id, stallCount: state.stallCount, elapsedMs: now - state.startedAt });
-      try { frame()?.contentWindow?.postMessage({ source: 'DC_FK_HOST', type: 'SYNC_WATCHDOG_STALL', payload: { stallCount: state.stallCount, elapsedMs: now - state.startedAt } }, '*'); } catch {}
+      try {
+        frame()?.contentWindow?.postMessage({
+          source: 'DC_FK_HOST', type: 'SYNC_WATCHDOG_STALL',
+          payload: { stallCount: state.stallCount, elapsedMs: now - state.startedAt }
+        }, '*');
+      } catch {}
     }
     if (now - state.startedAt >= MAX_SYNC_MS) finish('timeout', true);
   }
@@ -124,6 +172,7 @@
     state = {
       active: true,
       id: crypto.randomUUID(),
+      runId,
       originalUrl: location.href,
       startedAt: Date.now(),
       lastProgressAt: Date.now(),
@@ -133,7 +182,7 @@
     };
     lastFingerprint = fingerprint();
     lastChangeAt = Date.now();
-    persist();
+    persistRecord(state);
     startTimer();
     emitDiagnostic('sync-started', { syncId: state.id, originalUrl: state.originalUrl });
   }
@@ -147,7 +196,7 @@
       state.navigationCount++;
       emitDiagnostic('sync-navigation', { syncId: state.id, url: location.href, navigationCount: state.navigationCount });
     }
-    persist();
+    persistRecord(state);
   }
 
   function trustedDashboardMessage(event) {
@@ -178,7 +227,6 @@
     stopTimer();
     state = null;
     finishing = false;
-    try { sessionStorage.removeItem(STATE_KEY); } catch {}
     emitDiagnostic('context-invalid-cleanup', { syncId });
   });
 
@@ -188,15 +236,20 @@
   history.replaceState = function(...args) { const result = replace(...args); queueMicrotask(markNavigation); return result; };
   addEventListener('popstate', markNavigation);
   addEventListener('hashchange', markNavigation);
-  addEventListener('pagehide', () => persist());
+  addEventListener('pagehide', () => persistRecord(state));
 
   try {
     const recovered = JSON.parse(sessionStorage.getItem(STATE_KEY) || 'null');
     if (recovered?.active && extensionContextAvailable()) {
-      state = recovered;
+      state = { ...recovered, runId: recovered.runId || runId };
       restoreIssued = Boolean(recovered.restoreIssuedAt);
       if (Date.now() - Number(state.startedAt || 0) >= MAX_SYNC_MS) finish('expired', true);
-      else { lastFingerprint = fingerprint(); lastChangeAt = Date.now(); startTimer(); markNavigation(); }
+      else {
+        lastFingerprint = fingerprint();
+        lastChangeAt = Date.now();
+        startTimer();
+        markNavigation();
+      }
     }
-  } catch { try { sessionStorage.removeItem(STATE_KEY); } catch {} }
+  } catch {}
 })();

@@ -1,5 +1,21 @@
 'use strict';
 (() => {
+  // app.js renders after its asynchronous storage read. Define the shared KPI
+  // renderer immediately so every dashboard module can safely call kpiHtml().
+  if (typeof globalThis.kpiHtml !== 'function') {
+    globalThis.kpiHtml = (label, value, hint = '', icon = '•') => `
+      <div class="kpi">
+        <div class="row">
+          <span class="ico" aria-hidden="true">${typeof esc === 'function' ? esc(icon) : String(icon ?? '')}</span>
+          <div>
+            <small>${typeof esc === 'function' ? esc(label) : String(label ?? '')}</small>
+            <strong>${typeof esc === 'function' ? esc(value) : String(value ?? '')}</strong>
+          </div>
+        </div>
+        ${hint ? `<em>${typeof esc === 'function' ? esc(hint) : String(hint)}</em>` : ''}
+      </div>`;
+  }
+
   const params = new URLSearchParams(location.search);
   const token = params.get('token') || '';
   const embedded = params.get('embedded') === '1';
@@ -27,7 +43,7 @@
     </div>
     <pre id="runtimeReportOutput">No report generated.</pre>`;
   const settings = document.getElementById('settings');
-  if (settings) settings.prepend(panel);
+  if (settings && !document.getElementById('runtimeStart')) settings.prepend(panel);
 
   document.getElementById('runtimeStart')?.addEventListener('click', () => send('RUNTIME_TEST_RUN_START'));
   document.getElementById('runtimeReset')?.addEventListener('click', () => send('RUNTIME_TEST_RUN_RESET'));

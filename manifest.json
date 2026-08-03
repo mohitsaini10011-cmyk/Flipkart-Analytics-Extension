@@ -1,8 +1,8 @@
 {
   "manifest_version": 3,
-  "name": "Ecom Insight v3.5.4",
-  "version": "3.5.4",
-  "description": "Flipkart seller analytics with controller-owned trusted certification, transactional restoration and run-scoped diagnostics.",
+  "name": "Ecom Insight v3.5.5",
+  "version": "3.5.5",
+  "description": "Flipkart seller analytics with restored KPI rendering, controller-owned trusted certification and transactional restoration.",
   "permissions": ["storage", "downloads", "tabs", "activeTab"],
   "host_permissions": ["https://seller.flipkart.com/*", "https://*.seller.flipkart.com/*"],
   "action": {

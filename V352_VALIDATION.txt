@@ -1,0 +1,34 @@
+Ecom Insight v3.5.2 Validation Report
+
+SOURCE-LEVEL PASS
+- All previous context guards, cancellation sequencing, single restore ownership, heartbeat cleanup, branding, icons and Cropper removal remain present.
+- Explicit runtime test-run controls are available through dc-fk-runtime-test-run-start, dc-fk-runtime-test-run-reset and dc-fk-runtime-test-run-end.
+- tabSessionId, test runId and syncId are separate identifiers.
+- A sync captures the current test runId when it begins.
+- Same-run unfinished summaries are reconciled against the active controller session record and are marked interrupted after the grace window when no matching active controller exists.
+- Completed sessionStorage restore fallback is retried into Chrome storage after redirect and removed only after the Chrome copy is confirmed.
+- Session-only persistence is marked degraded.
+- Runtime certification fails when degraded persistence is present.
+- Diagnostics write failures are preserved in sessionStorage and migrated when Chrome storage becomes available again.
+- Error attribution uses confidence levels: confirmed, probable and unknown.
+- Only confirmed extension errors hard-fail certification; probable extension errors remain visible as warnings.
+- Reports remain scoped to one explicit test runId and cannot pass without at least one completed sync.
+- syncSummaries retention remains capped at 100 records and 30 days.
+- Manifest version is 3.5.2.
+
+TEST-RUN CONTROLS
+Start a clean run:
+window.dispatchEvent(new CustomEvent('dc-fk-runtime-test-run-start'));
+
+Reset and begin another clean run:
+window.dispatchEvent(new CustomEvent('dc-fk-runtime-test-run-reset'));
+
+End the current run:
+window.dispatchEvent(new CustomEvent('dc-fk-runtime-test-run-end'));
+
+Request the current run report:
+window.addEventListener('dc-fk-runtime-report', event => console.log(event.detail), { once: true });
+window.dispatchEvent(new CustomEvent('dc-fk-runtime-report-request'));
+
+RUNTIME TEST REQUIREMENT
+Authenticated Flipkart Seller Hub tests must still be executed in Chrome. Source validation cannot operate the user's logged-in browser session or manufacture observed runtime evidence.

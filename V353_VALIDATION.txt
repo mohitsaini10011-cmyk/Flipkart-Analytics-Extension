@@ -1,0 +1,25 @@
+Ecom Insight v3.5.3 Validation Report
+
+SOURCE-LEVEL PASS
+- All previous context guards, single restoration ownership, cancellation sequencing, heartbeat cleanup, branding, icons and Cropper removal remain intact.
+- v353-certification-fix.js loads before the legacy controller and diagnostics runtimes.
+- Legacy page-level test-run start/reset/end events are intercepted before older listeners can process them.
+- Test-run lifecycle changes are accepted only from the embedded dashboard frame when its source window and channel token match.
+- Start, reset and end are rejected while a sync is active.
+- The certification controller emits one accepted or rejected lifecycle diagnostic per control action.
+- Legacy duplicate test-run lifecycle handlers do not receive intercepted raw page events.
+- Runtime report generation is replaced by the v3.5.3 strict report handler.
+- A confirmed extension error requires the current chrome-extension:// base URL in filename or stack.
+- Unique filenames and Ecom Insight markers without the current extension URL are classified only as probable.
+- Certification still requires a completed sync, all started syncs finished, correct per-sync restore counts, no persistence failure, no degraded persistence and zero confirmed extension errors.
+- Manifest version is 3.5.3.
+
+TRUSTED DASHBOARD MESSAGE TYPES
+- RUNTIME_TEST_RUN_START
+- RUNTIME_TEST_RUN_RESET
+- RUNTIME_TEST_RUN_END
+
+Each message must use source: DC_FK_DASHBOARD and the token from the embedded dashboard iframe URL.
+
+RUNTIME REQUIREMENT
+Authenticated Flipkart Seller Hub testing must still be executed in Chrome. Source validation does not prove real Seller Hub navigation, cancellation, restoration or console behavior.

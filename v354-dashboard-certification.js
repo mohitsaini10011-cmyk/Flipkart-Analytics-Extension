@@ -3,12 +3,16 @@
   if (typeof globalThis.kpiHtml !== 'function') {
     globalThis.kpiHtml = (label, value, hint = '', icon = '•') => `<div class="kpi"><div class="row"><span class="ico" aria-hidden="true">${typeof esc === 'function' ? esc(icon) : String(icon ?? '')}</span><div><small>${typeof esc === 'function' ? esc(label) : String(label ?? '')}</small><strong>${typeof esc === 'function' ? esc(value) : String(value ?? '')}</strong></div></div>${hint ? `<em>${typeof esc === 'function' ? esc(hint) : String(hint)}</em>` : ''}</div>`;
   }
-  if (!document.querySelector('script[data-dc-ui-runtime]')) {
+  function loadRuntime(src, marker) {
+    if (document.querySelector(`script[${marker}]`)) return;
     const script = document.createElement('script');
-    script.src = 'v356-ui-runtime.js';
-    script.dataset.dcUiRuntime = '1';
+    script.src = src;
+    script.setAttribute(marker, '1');
     document.head.appendChild(script);
   }
+  loadRuntime('v356-ui-runtime.js', 'data-dc-ui-runtime');
+  loadRuntime('v357-functional-modules.js', 'data-dc-functional-runtime');
+
   const params = new URLSearchParams(location.search);
   const token = params.get('token') || '';
   const embedded = params.get('embedded') === '1';

@@ -1,7 +1,8 @@
 'use strict';
 (() => {
   const STATE_KEY = 'dc_fk_sync_controller_v343';
-  const RUN_KEY = 'dc_fk_runtime_run_v351';
+  const TAB_SESSION_KEY = 'dc_fk_tab_session_v352';
+  const TEST_RUN_KEY = 'dc_fk_runtime_test_run_v352';
   const OVERLAY_ID = 'dc-flipkart-analytics-overlay';
   const MAX_SYNC_MS = 15 * 60 * 1000;
   const STALL_MS = 2 * 60 * 1000;
@@ -17,17 +18,18 @@
     try { return Boolean(globalThis.chrome?.runtime?.id && chrome.storage?.local); }
     catch { return false; }
   }
-  function getRunId() {
+  function getOrCreateSessionValue(key) {
     try {
-      let value = sessionStorage.getItem(RUN_KEY);
+      let value = sessionStorage.getItem(key);
       if (!value) {
         value = crypto.randomUUID();
-        sessionStorage.setItem(RUN_KEY, value);
+        sessionStorage.setItem(key, value);
       }
       return value;
     } catch { return crypto.randomUUID(); }
   }
-  const runId = getRunId();
+  const tabSessionId = getOrCreateSessionValue(TAB_SESSION_KEY);
+  function getTestRunId() { return getOrCreateSessionValue(TEST_RUN_KEY); }
   const validUrl = value => {
     try {
       const url = new URL(value, location.href);
@@ -57,7 +59,12 @@
     if (chromeSaved && !keepSessionFallback && !record?.active) {
       try { sessionStorage.removeItem(STATE_KEY); } catch {}
     }
-    return { ok: chromeSaved || sessionSaved, chromeSaved, sessionSaved };
+    return {
+      ok: chromeSaved || sessionSaved,
+      chromeSaved,
+      sessionSaved,
+      degraded: sessionSaved && !chromeSaved
+    };
   }
 
   function stopTimer() {
@@ -67,8 +74,16 @@
 
   function emitDiagnostic(type, detail = {}) {
     try {
+      const activeRunId = detail.runId || state?.runId || getTestRunId();
       window.dispatchEvent(new CustomEvent('dc-fk-runtime-diagnostic', {
-        detail: { type, at: Date.now(), runId, syncId: state?.id || detail.syncId || null, ...detail }
+        detail: {
+          type,
+          at: Date.now(),
+          tabSessionId,
+          runId: activeRunId,
+          syncId: state?.id || detail.syncId || null,
+          ...detail
+        }
       }));
     } catch {}
   }
@@ -78,11 +93,13 @@
     finishing = true;
     const activeState = state;
     const syncId = activeState.id;
+    const activeRunId = activeState.runId || getTestRunId();
     const originalUrl = validUrl(activeState.originalUrl);
     const requiresRestore = Boolean(restore && originalUrl && !sameUrl(location.href, originalUrl));
     const completed = {
       ...activeState,
-      runId,
+      tabSessionId,
+      runId: activeRunId,
       active: false,
       result,
       finishedAt: Date.now(),
@@ -99,24 +116,36 @@
     state = null;
     stopTimer();
     const persisted = await persistRecord(completed, true);
+    completed.persistence = persisted;
     emitDiagnostic('sync-finished', {
-      syncId, result, originalUrl, finalUrl: location.href, requiresRestore,
+      runId: activeRunId,
+      syncId,
+      result,
+      originalUrl,
+      finalUrl: location.href,
+      requiresRestore,
       restoreIssuedAt: completed.restoreIssuedAt || null,
-      persistence: persisted
+      persistence: persisted,
+      persistenceDegraded: persisted.degraded
     });
 
     if (completed.restoreIssuedAt && persisted.ok) {
       emitDiagnostic('restore-issued', {
-        syncId, result, originalUrl, fromUrl: location.href,
+        runId: activeRunId,
+        syncId,
+        result,
+        originalUrl,
+        fromUrl: location.href,
         restoreIssuedAt: completed.restoreIssuedAt,
-        persistence: persisted
+        persistence: persisted,
+        persistenceDegraded: persisted.degraded
       });
       location.assign(originalUrl);
       return;
     }
     if (completed.restoreIssuedAt && !persisted.ok) {
       restoreIssued = false;
-      emitDiagnostic('restore-blocked-persistence-failed', { syncId, originalUrl });
+      emitDiagnostic('restore-blocked-persistence-failed', { runId: activeRunId, syncId, originalUrl });
     }
     finishing = false;
   }
@@ -131,8 +160,9 @@
     if (!extensionContextAvailable()) {
       stopTimer();
       const syncId = state?.id || null;
+      const runId = state?.runId || getTestRunId();
       state = null;
-      emitDiagnostic('context-invalid-heartbeat-stop', { syncId });
+      emitDiagnostic('context-invalid-heartbeat-stop', { runId, syncId });
       return;
     }
     if (!state?.active) return;
@@ -148,10 +178,11 @@
       state.lastStallAt = now;
       lastChangeAt = now;
       persistRecord(state);
-      emitDiagnostic('sync-stall', { syncId: state.id, stallCount: state.stallCount, elapsedMs: now - state.startedAt });
+      emitDiagnostic('sync-stall', { runId: state.runId, syncId: state.id, stallCount: state.stallCount, elapsedMs: now - state.startedAt });
       try {
         frame()?.contentWindow?.postMessage({
-          source: 'DC_FK_HOST', type: 'SYNC_WATCHDOG_STALL',
+          source: 'DC_FK_HOST',
+          type: 'SYNC_WATCHDOG_STALL',
           payload: { stallCount: state.stallCount, elapsedMs: now - state.startedAt }
         }, '*');
       } catch {}
@@ -167,11 +198,13 @@
 
   function begin() {
     if (!extensionContextAvailable() || state?.active) return;
+    const runId = getTestRunId();
     restoreIssued = false;
     finishing = false;
     state = {
       active: true,
       id: crypto.randomUUID(),
+      tabSessionId,
       runId,
       originalUrl: location.href,
       startedAt: Date.now(),
@@ -184,7 +217,7 @@
     lastChangeAt = Date.now();
     persistRecord(state);
     startTimer();
-    emitDiagnostic('sync-started', { syncId: state.id, originalUrl: state.originalUrl });
+    emitDiagnostic('sync-started', { runId, syncId: state.id, originalUrl: state.originalUrl });
   }
 
   function markNavigation() {
@@ -194,7 +227,7 @@
       state.visitedUrls.push(location.href);
       state.visitedUrls = state.visitedUrls.slice(-30);
       state.navigationCount++;
-      emitDiagnostic('sync-navigation', { syncId: state.id, url: location.href, navigationCount: state.navigationCount });
+      emitDiagnostic('sync-navigation', { runId: state.runId, syncId: state.id, url: location.href, navigationCount: state.navigationCount });
     }
     persistRecord(state);
   }
@@ -212,7 +245,7 @@
     if (!trustedDashboardMessage(event)) return;
     const type = event.data?.type;
     if (type === 'AUTO_SYNC_ALL') begin();
-    if (type === 'CANCEL_AUTO_SYNC') emitDiagnostic('cancel-requested', { syncId: state?.id || null });
+    if (type === 'CANCEL_AUTO_SYNC') emitDiagnostic('cancel-requested', { runId: state?.runId || getTestRunId(), syncId: state?.id || null });
   }, true);
 
   window.addEventListener('dc-fk-sync-lifecycle', event => {
@@ -224,10 +257,33 @@
 
   window.addEventListener('dc-extension-context-invalid', () => {
     const syncId = state?.id || null;
+    const runId = state?.runId || getTestRunId();
     stopTimer();
     state = null;
     finishing = false;
-    emitDiagnostic('context-invalid-cleanup', { syncId });
+    emitDiagnostic('context-invalid-cleanup', { runId, syncId });
+  });
+
+  window.addEventListener('dc-fk-runtime-test-run-start', event => {
+    if (state?.active) {
+      emitDiagnostic('test-run-control-rejected', { action: 'start', reason: 'sync-active', runId: state.runId, syncId: state.id });
+      return;
+    }
+    const nextRunId = event.detail?.runId || crypto.randomUUID();
+    try { sessionStorage.setItem(TEST_RUN_KEY, nextRunId); } catch {}
+    emitDiagnostic('test-run-started', { runId: nextRunId });
+  });
+  window.addEventListener('dc-fk-runtime-test-run-reset', event => {
+    if (state?.active) {
+      emitDiagnostic('test-run-control-rejected', { action: 'reset', reason: 'sync-active', runId: state.runId, syncId: state.id });
+      return;
+    }
+    const nextRunId = event.detail?.runId || crypto.randomUUID();
+    try { sessionStorage.setItem(TEST_RUN_KEY, nextRunId); } catch {}
+    emitDiagnostic('test-run-reset', { runId: nextRunId });
+  });
+  window.addEventListener('dc-fk-runtime-test-run-end', () => {
+    emitDiagnostic('test-run-ended', { runId: state?.runId || getTestRunId(), syncId: state?.id || null, syncActive: Boolean(state?.active) });
   });
 
   const push = history.pushState.bind(history);
@@ -238,18 +294,43 @@
   addEventListener('hashchange', markNavigation);
   addEventListener('pagehide', () => persistRecord(state));
 
-  try {
-    const recovered = JSON.parse(sessionStorage.getItem(STATE_KEY) || 'null');
-    if (recovered?.active && extensionContextAvailable()) {
-      state = { ...recovered, runId: recovered.runId || runId };
+  async function recoverState() {
+    let recovered = null;
+    try { recovered = JSON.parse(sessionStorage.getItem(STATE_KEY) || 'null'); } catch {}
+    if (!recovered) return;
+
+    if (recovered.active && extensionContextAvailable()) {
+      state = { ...recovered, tabSessionId: recovered.tabSessionId || tabSessionId, runId: recovered.runId || getTestRunId() };
       restoreIssued = Boolean(recovered.restoreIssuedAt);
-      if (Date.now() - Number(state.startedAt || 0) >= MAX_SYNC_MS) finish('expired', true);
+      if (Date.now() - Number(state.startedAt || 0) >= MAX_SYNC_MS) await finish('expired', true);
       else {
         lastFingerprint = fingerprint();
         lastChangeAt = Date.now();
         startTimer();
         markNavigation();
       }
+      return;
     }
-  } catch {}
+
+    if (recovered.active === false) {
+      let chromeCopy = null;
+      if (extensionContextAvailable()) {
+        try { chromeCopy = (await chrome.storage.local.get(STATE_KEY))[STATE_KEY] || null; } catch {}
+        if (!chromeCopy || chromeCopy.id !== recovered.id || !chromeCopy.finishedAt) {
+          try {
+            await chrome.storage.local.set({ [STATE_KEY]: recovered });
+            chromeCopy = recovered;
+          } catch {}
+        }
+      }
+      if (chromeCopy && chromeCopy.id === recovered.id && chromeCopy.finishedAt) {
+        try { sessionStorage.removeItem(STATE_KEY); } catch {}
+        emitDiagnostic('completed-fallback-cleaned', { runId: recovered.runId || getTestRunId(), syncId: recovered.id });
+      } else {
+        emitDiagnostic('completed-fallback-retained', { runId: recovered.runId || getTestRunId(), syncId: recovered.id });
+      }
+    }
+  }
+
+  recoverState();
 })();

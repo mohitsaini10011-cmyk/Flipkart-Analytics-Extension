@@ -12,6 +12,7 @@
   }
   loadRuntime('v356-ui-runtime.js', 'data-dc-ui-runtime');
   loadRuntime('v357-functional-modules.js', 'data-dc-functional-runtime');
+  loadRuntime('v360-orders-analytics.js', 'data-dc-v360-runtime');
 
   const params = new URLSearchParams(location.search);
   const token = params.get('token') || '';

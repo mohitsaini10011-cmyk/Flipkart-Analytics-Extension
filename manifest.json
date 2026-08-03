@@ -1,8 +1,8 @@
 {
   "manifest_version": 3,
-  "name": "Ecom Insight v3.5.5",
-  "version": "3.5.5",
-  "description": "Flipkart seller analytics with restored KPI rendering, controller-owned trusted certification and transactional restoration.",
+  "name": "Ecom Insight v3.5.6",
+  "version": "3.5.6",
+  "description": "Flipkart seller analytics with functional analytics tabs, resilient empty states, restored KPI rendering and trusted runtime certification.",
   "permissions": ["storage", "downloads", "tabs", "activeTab"],
   "host_permissions": ["https://seller.flipkart.com/*", "https://*.seller.flipkart.com/*"],
   "action": {
@@ -16,7 +16,7 @@
   ],
   "icons": {"16":"icons/icon16.png","32":"icons/icon32.png","48":"icons/icon48.png","128":"icons/icon128.png"},
   "web_accessible_resources": [{
-    "resources": ["dashboard.html","styles.css","app.js","icons/*","page-bridge.js","v34-core.js","v341-migration-integrity.js","v341-clear-modes.js","v341-backup-schema.js","v341-inventory-parser.js","v341-data-coverage.js","v341-seller-identity.js","v341-orders-parser.js","v341-returns-parser.js","v341-payments-parser.js","v341-settlements-parser.js","v341-xlsx-importer.js","v345-runtime.js","v354-dashboard-certification.js"],
+    "resources": ["dashboard.html","styles.css","app.js","icons/*","page-bridge.js","v34-core.js","v341-migration-integrity.js","v341-clear-modes.js","v341-backup-schema.js","v341-inventory-parser.js","v341-data-coverage.js","v341-seller-identity.js","v341-orders-parser.js","v341-returns-parser.js","v341-payments-parser.js","v341-settlements-parser.js","v341-xlsx-importer.js","v345-runtime.js","v354-dashboard-certification.js","v356-ui-runtime.js"],
     "matches": ["https://seller.flipkart.com/*","https://*.seller.flipkart.com/*"]
   }]
 }

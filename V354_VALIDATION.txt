@@ -1,0 +1,18 @@
+Ecom Insight v3.5.4 Validation Report
+
+SOURCE-LEVEL PASS
+- Trusted test-run handling is consolidated inside v343-sync-controller.js.
+- Legacy raw page-level start/reset/end listeners were removed from the controller and diagnostics.
+- Dashboard Settings now loads v354-dashboard-certification.js with Start, Reset, End and Generate Report controls.
+- Dashboard messages require the embedded iframe source and matching channel token.
+- Controller returns token-bearing RUNTIME_TEST_CONTROL_RESULT acknowledgements.
+- End requested during an active sync is deferred and finalized after the terminal sync lifecycle.
+- Diagnostics updates testRuns only from controller-emitted accepted lifecycle diagnostics.
+- Certification requires testRun.status=ended.
+- Certification fails on diagnostics write failures, persistence failure, degraded persistence, incorrect restore counts, unfinished syncs or confirmed extension errors.
+- Confirmed extension errors require the current chrome-extension:// base in filename or stack.
+- v353-certification-fix.js was deleted.
+- Manifest version is 3.5.4.
+
+RUNTIME REQUIREMENT
+Authenticated Flipkart Seller Hub testing is still required. Source validation cannot prove live Seller Hub navigation, cancellation, restoration or console behavior.

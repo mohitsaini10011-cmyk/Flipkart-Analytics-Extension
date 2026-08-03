@@ -1,8 +1,8 @@
 {
   "manifest_version": 3,
-  "name": "Ecom Insight v3.5.0",
-  "version": "3.5.0",
-  "description": "Flipkart seller analytics with guarded dashboard launch, unified sync recovery, durable exactly-once restoration and per-sync runtime diagnostics.",
+  "name": "Ecom Insight v3.5.1",
+  "version": "3.5.1",
+  "description": "Flipkart seller analytics with transactional restore persistence, run-scoped certification and retained per-sync diagnostics.",
   "permissions": ["storage", "downloads", "tabs", "activeTab"],
   "host_permissions": ["https://seller.flipkart.com/*", "https://*.seller.flipkart.com/*"],
   "action": {

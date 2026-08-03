@@ -1,8 +1,8 @@
 {
   "manifest_version": 3,
-  "name": "Ecom Insight v3.5.2",
-  "version": "3.5.2",
-  "description": "Flipkart seller analytics with explicit runtime test runs, transactional restore fallback and confidence-scored diagnostics.",
+  "name": "Ecom Insight v3.5.3",
+  "version": "3.5.3",
+  "description": "Flipkart seller analytics with trusted runtime certification controls, transactional restoration and strict extension-error attribution.",
   "permissions": ["storage", "downloads", "tabs", "activeTab"],
   "host_permissions": ["https://seller.flipkart.com/*", "https://*.seller.flipkart.com/*"],
   "action": {
@@ -28,6 +28,7 @@
         "v346-context-guard.js",
         "v341-pagination-guard.js",
         "content.js",
+        "v353-certification-fix.js",
         "v343-sync-controller.js",
         "v348-runtime-diagnostics.js"
       ],

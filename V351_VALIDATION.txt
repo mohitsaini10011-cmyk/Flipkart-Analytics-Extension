@@ -1,0 +1,19 @@
+Ecom Insight v3.5.1 Validation Report
+
+SOURCE-LEVEL PASS
+- All prior context guards, cancellation sequencing, single restore ownership, heartbeat cleanup, branding, icons and Cropper removal remain present.
+- Restore persistence is transactional: completed restore metadata is written to sessionStorage fallback and Chrome storage before redirect.
+- Redirect is blocked when neither persistence layer succeeds.
+- Runtime diagnostics use a stable per-tab runId shared through sessionStorage.
+- Reports are scoped to the requested/current runId.
+- A runtime report cannot pass without at least one started and one finished sync.
+- allStartedSyncsFinished is required for certification.
+- Historical unfinished syncs from older runIds are marked interrupted at startup.
+- syncSummaries are retained separately from rolling events.
+- syncSummaries are limited to 100 records and 30 days.
+- Generic content.js/background.js filename-only matching was removed from extension error attribution.
+- Restore persistence failures are surfaced in per-sync summaries and fail certification.
+- Manifest version is 3.5.1.
+
+RUNTIME TEST REQUIREMENT
+Authenticated Flipkart Seller Hub tests must still be executed in Chrome. Source validation cannot operate the user's logged-in browser session or replace observed runtime evidence.
